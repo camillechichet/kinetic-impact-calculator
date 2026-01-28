@@ -344,15 +344,16 @@ with tabs[0]:
         st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
         st.markdown("**Load an example**")
         venue_choice = st.selectbox(
-            "Venue type",
-            list(VENUE_PRESETS.keys()),
-            index=list(VENUE_PRESETS.keys()).index(st.session_state.venue),
-            on_change=lambda: apply_preset(st.session_state.venue),
-            key="venue_select",
-        )
-        if venue_choice != st.session_state.venue:
-            apply_preset(venue_choice)
-            st.rerun()
+           venue_choice = st.selectbox(
+    "Venue type",
+    list(VENUE_PRESETS.keys()),
+    index=list(VENUE_PRESETS.keys()).index(st.session_state.venue),
+    key="venue_select",
+)
+
+if venue_choice != st.session_state.venue:
+    apply_preset(venue_choice)
+    st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
