@@ -33,6 +33,7 @@ STR = {
         "inputs_tab": "Inputs",
         "results_tab": "Results",
         "method_tab": "Methodology / Limits",
+        "about_tab": "About",
         "context": "Context",
         "preset_caption": "Preset:",
         "preset_uncertainty": "Uncertainty:",
@@ -137,6 +138,7 @@ STR = {
         "plausible": "✅ plausible",
         "optimistic": "⚠️ optimistic",
         "improbable": "🚩 very unlikely",
+        "about_title": "Turning footsteps into better decisions: a lightweight tool for kinetic floor projects",
     }
 }
 LANG = "en"
@@ -410,16 +412,17 @@ with mode_col:
     inp["mode"] = mode
 
 with tour_col:
-    # ✅ KEY ADDED (required)
     inp["tour_on"] = st.toggle(t("quick_start"), value=bool(inp["tour_on"]), key="tour_on")
     if inp["tour_on"]:
         st.caption(t("quick_start_caption"))
 
 
 # =========================================================
-# Tabs
+# Tabs (4 tabs now)
 # =========================================================
-tab_inputs, tab_results, tab_methods = st.tabs([t("inputs_tab"), t("results_tab"), t("method_tab")])
+tab_inputs, tab_results, tab_methods, tab_about = st.tabs(
+    [t("inputs_tab"), t("results_tab"), t("method_tab"), t("about_tab")]
+)
 
 
 # =========================================================
@@ -434,12 +437,10 @@ def tour_controls_once():
 
     b1, b2, b3 = st.columns([1, 1, 2])
     with b1:
-        # ✅ KEY ADDED (required)
         if st.button(t("prev"), disabled=(step <= 1), key="tour_prev_btn"):
             inp["tour_step"] = max(1, step - 1)
             st.rerun()
     with b2:
-        # ✅ KEY ADDED (required)
         if st.button(t("next"), disabled=(step >= 5), key="tour_next_btn"):
             inp["tour_step"] = min(5, step + 1)
             st.rerun()
@@ -452,14 +453,12 @@ def tour_controls_once():
 # Inputs tab
 # =========================================================
 with tab_inputs:
-    # ✅ Tour controls shown ONCE here
     tour_controls_once()
 
     tour_step = int(inp.get("tour_step", 1)) if inp["tour_on"] else 999
 
     c1, c2, c3 = st.columns([1.1, 1.0, 1.0], gap="large")
 
-    # ---------------- Column 1: Context + Flow ----------------
     with c1:
         st.subheader(t("context"))
 
@@ -556,7 +555,6 @@ with tab_inputs:
             st.info(t("tour_step_4"))
             st.stop()
 
-    # ---------------- Column 2: Technical + sizing ----------------
     with c2:
         st.subheader(t("tech_assumptions"))
 
@@ -602,7 +600,6 @@ with tab_inputs:
         est_tiles = int(round(area_ft2 / tile_area_ft2))
         st.info(f"{t('tiles_est')} ~ **{est_tiles}** {t('tiles_for')} {area_ft2:.0f} ft² ({t('if_tile')} {tile_area_ft2:.2f} ft²).")
 
-        # sanity check warning
         area_m2 = ft2_to_m2(area_ft2)
         approx_length_m = max(0.5, float(np.sqrt(area_m2)))
         v_free = 1.34
@@ -629,7 +626,6 @@ with tab_inputs:
                     for label, url in SOURCES["speed/step rate"]:
                         st.link_button(label, url)
 
-    # ---------------- Column 3: Costs + (advanced) forecast/export ----------------
     with c3:
         st.subheader(t("costs"))
 
@@ -761,7 +757,7 @@ with tab_results:
         show_verdict(ped_kind, ped_reason)
 
     with st.container(border=True):
-        st.markdown(f"### {t('drivers_box')}")
+        st.markdown("### What drives your result the most")
         st.write("👉 1) % on zone  2) useful steps  3) J_net/step (then visitors/day).")
 
     m1, m2, m3 = st.columns(3)
@@ -820,8 +816,13 @@ with tab_results:
         out_df = pd.DataFrame([export])
         buf = io.StringIO()
         out_df.to_csv(buf, index=False)
-        st.download_button(t("download_csv"), data=buf.getvalue().encode("utf-8"),
-                           file_name="kinetic_impact_results.csv", mime="text/csv", key="btn_download_csv")
+        st.download_button(
+            t("download_csv"),
+            data=buf.getvalue().encode("utf-8"),
+            file_name="kinetic_impact_results.csv",
+            mime="text/csv",
+            key="btn_download_csv"
+        )
 
     if inp["tour_on"] and int(inp.get("tour_step", 1)) == 5:
         st.success(t("tour_step_5"))
@@ -872,6 +873,35 @@ with tab_methods:
 
     st.markdown(f"### {t('cost_note')}")
     st.info(t("cost_note_text"))
+
+
+# =========================================================
+# About tab (NEW)
+# =========================================================
+with tab_about:
+    st.subheader(t("about_title"))
+
+    st.markdown(
+        """
+Kinetic floor tiles are a compelling sustainability idea: install tiles in a high-traffic area, convert footsteps into electricity, and make clean energy visible to the public. But when I looked closer, I realized the reality is more nuanced. In most public venues, the harvested energy is modest, while installation and maintenance can be significant. That gap creates a real risk of “greenwashing by intuition”: projects get approved for the story, not because the design is right-sized for real impact.
+
+My goal with this capstone was to build a decision-support tool, not just a calculator. I created the Kinetic Impact Calculator, a simple web app that helps a venue estimate: (1) how much net electrical energy a kinetic floor could realistically deliver, (2) what that energy can actually power in everyday terms (a 10W LED, a low-power sensor, a small information display), and (3) whether the project is worth doing under different assumptions, including rough cost ranges and uncertainty scenarios.
+
+This project connects directly to Sustainable AI because I intentionally kept the “AI” component lightweight and purpose-driven. Instead of using a large model, I added an optional forecasting module that can ingest a simple CSV of historical visitors (date, visitors) and produce a short-term traffic prediction using a frugal method (trend + day-of-week pattern). My objective is not to maximize computation; it is to reduce waste by preventing over-installation. In practice, the tool shows which inputs dominate the results—typically the % of visitors who actually step on the equipped zone, the number of useful steps per visitor, and the net joules per step—so a decision maker can size the installation conservatively and avoid unnecessary materials, cost, and maintenance.
+
+### My goals
+I built this project to:
+1. Improve decision quality for kinetic energy installations by putting net energy, scenarios, and costs in one transparent place.
+2. Reduce the risk of overbuilding by highlighting the few parameters that drive the outcome the most.
+3. Make results intuitive through daily “what it can power” equivalences rather than abstract kWh claims.
+4. Support climate/energy communication with honest framing: kinetic floors rarely power buildings, but they can power micro-loads and create strong educational visibility.
+
+### My intended audience
+My primary audience is public-space decision makers: museum operations teams, transit station managers, event organizers, campus sustainability offices, and municipalities considering an engagement-oriented energy feature. A secondary audience is educators and sustainability communicators who want an interactive way to make energy tangible and measurable.
+
+This project was developed as part of the MIT IAP 2026 course “Sustainable AI” (Massachusetts Institute of Technology, USA).
+        """
+    )
 
 
 # =========================================================
