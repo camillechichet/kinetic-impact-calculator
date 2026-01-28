@@ -899,7 +899,7 @@ I built this project to:
 ### My intended audience
 My primary audience is public-space decision makers: museum operations teams, transit station managers, event organizers, campus sustainability offices, and municipalities considering an engagement-oriented energy feature. A secondary audience is educators and sustainability communicators who want an interactive way to make energy tangible and measurable.
 
-This project was developed as part of the MIT IAP 2026 course “Sustainable AI” (Massachusetts Institute of Technology, USA).
+st.caption("*This project was developed as part of the MIT IAP 2026 course “Sustainable AI” (Massachusetts Institute of Technology, USA).*")
         """
     )
 
