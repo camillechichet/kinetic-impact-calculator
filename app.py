@@ -1,179 +1,408 @@
 import io
-import math
+from dataclasses import dataclass
+from datetime import timedelta
+
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-from sklearn.linear_model import LinearRegression
-from codecarbon import EmissionsTracker
+# CodeCarbon (mesure CO2 du calcul IA)
+try:
+    from codecarbon import EmissionsTracker
+    CODECARBON_OK = True
+except Exception:
+    CODECARBON_OK = False
 
-st.set_page_config(page_title="Kinetic Impact Calculator", layout="wide")
+
+st.set_page_config(page_title="Kinetic Impact Calculator (inspired by Coldplay)", layout="wide")
+
+# -----------------------------
+# Helpers / core calculations
+# -----------------------------
+@dataclass
+class Inputs:
+    place_type: str
+    visitors_per_day: float
+    peak_multiplier: float
+    avg_duration_hours: float
+    pct_on_zone: float
+    useful_steps_per_person: float
+    joules_per_step: float
+    efficiency: float
+    storage_losses: float
+
+    # Costs
+    installed_cost_per_ft2: float
+    fixed_cost: float
+    maintenance_pct_per_year: float
+    amort_years: int
+
+    # Installation
+    surface_ft2: float
+    tile_area_ft2: float
+
+def energy_wh_per_day(visitors_per_day, peak_multiplier, pct_on_zone, useful_steps, j_per_step, eff, losses):
+    # Wh/day = visitors * peak * (%passage) * steps * J/step * efficiency * (1-losses) / 3600
+    visitors_effective = visitors_per_day * peak_multiplier
+    steps_captured = visitors_effective * (pct_on_zone / 100.0) * useful_steps
+    wh = steps_captured * j_per_step * eff * (1.0 - losses) / 3600.0
+    return wh
+
+def wh_to_kwh(wh): 
+    return wh / 1000.0
+
+def kwh_periods(kwh_per_day):
+    return {
+        "kWh/day": kwh_per_day,
+        "kWh/month (~30d)": kwh_per_day * 30.0,
+        "kWh/year (~365d)": kwh_per_day * 365.0,
+    }
+
+def capex_opex_costs(surface_ft2, cost_per_ft2, fixed_cost, maint_pct, amort_years):
+    capex = surface_ft2 * cost_per_ft2 + fixed_cost
+    opex_per_year = (maint_pct / 100.0) * capex
+    return capex, opex_per_year, amort_years
+
+def cost_per_kwh(capex, opex_per_year, years, kwh_per_year):
+    if kwh_per_year <= 0:
+        return np.inf
+    total_cost = capex + opex_per_year * years
+    total_kwh = kwh_per_year * years
+    return total_cost / total_kwh
+
+def go_nogo(kwh_per_day, cost_kwh, led10w_hours, screen25w_hours):
+    # Règles simples (transparentes)
+    # - "Go pédagogique" si tu peux alimenter une petite charge quelques heures
+    # - "Go énergétique" rare, si coût/kWh pas délirant (seuil arbitraire mais utile décision)
+    go_pedago = (led10w_hours >= 2.0) or (screen25w_hours >= 1.0)
+    go_energy = (cost_kwh <= 1.0) and (kwh_per_day >= 0.5)  # seuils simples, modifiables si besoin
+
+    if go_energy:
+        return "GO ✅ (énergie + pédagogie)", "Energy is meaningful vs cost (by our simple thresholds)."
+    if go_pedago:
+        return "GO (pédagogie/local) ✅", "Energy is modest but enough for local devices + engagement."
+    return "NO-GO ❌", "Energy is too low for meaningful use; consider alternative or smaller pilot."
+
+def scenario_pack(inp: Inputs):
+    # 3 scénarios: bas / moyen / haut (incertitude)
+    scenarios = [
+        ("Low", 0.8, 0.8, max(0.30, inp.efficiency - 0.10)),
+        ("Mid", 1.0, 1.0, inp.efficiency),
+        ("High", 1.2, 1.2, min(0.80, inp.efficiency + 0.10)),
+    ]
+    rows = []
+    for name, v_mult, s_mult, eff in scenarios:
+        wh = energy_wh_per_day(
+            inp.visitors_per_day * v_mult,
+            inp.peak_multiplier,
+            inp.pct_on_zone,
+            inp.useful_steps_per_person * s_mult,
+            inp.joules_per_step,
+            eff,
+            inp.storage_losses,
+        )
+        kwhd = wh_to_kwh(wh)
+        rows.append({"Scenario": name, "kWh/day": kwhd, "kWh/month": kwhd*30, "kWh/year": kwhd*365, "efficiency": eff})
+    return pd.DataFrame(rows)
+
+# IA légère : prévision visiteurs (sans sklearn)
+def forecast_visitors_linear(df, horizon_days=14):
+    """
+    df must have columns: date, visitors
+    returns forecast dataframe with date + visitors_pred
+    """
+    d = df.copy()
+    d["date"] = pd.to_datetime(d["date"])
+    d = d.sort_values("date").dropna(subset=["date", "visitors"])
+    d["visitors"] = pd.to_numeric(d["visitors"], errors="coerce")
+    d = d.dropna(subset=["visitors"])
+
+    if len(d) < 5:
+        raise ValueError("Need at least 5 rows to forecast.")
+
+    # Convert dates to day index
+    x = (d["date"] - d["date"].min()).dt.days.values.astype(float)
+    y = d["visitors"].values.astype(float)
+
+    # Fit simple trend line
+    coeff = np.polyfit(x, y, deg=1)  # slope, intercept
+    slope, intercept = coeff[0], coeff[1]
+
+    last_day = int(x.max())
+    future_x = np.arange(last_day + 1, last_day + 1 + horizon_days).astype(float)
+    future_dates = [d["date"].min() + timedelta(days=int(i)) for i in future_x]
+    y_pred = slope * future_x + intercept
+    y_pred = np.clip(y_pred, 0, None)  # no negative visitors
+
+    out = pd.DataFrame({"date": future_dates, "visitors_pred": y_pred})
+    return out
+
+def run_codecarbon():
+    if not CODECARBON_OK:
+        return None, None
+    try:
+        tracker = EmissionsTracker(save_to_file=False, log_level="error")
+        tracker.start()
+        return tracker, None
+    except Exception as e:
+        return None, str(e)
+
+
+# -----------------------------
+# UI
+# -----------------------------
 st.title("Kinetic Impact Calculator (inspired by Coldplay)")
-st.caption("MVP : énergie (kWh), usages locaux, coûts (CAPEX/OPEX), coût/kWh, GO/NO-GO, + CodeCarbon (empreinte du calcul IA).")
+st.caption("MVP : énergie (kWh), usages locaux (LED/écran), coûts (CAPEX/OPEX), Go/No-Go, + IA légère (prévision) + CodeCarbon.")
 
 tabs = st.tabs(["Inputs", "Results", "Methodology"])
 
-def energy_wh_per_day(visitors_per_day, pass_share, useful_steps, joules_per_step, efficiency, storage_loss):
-    steps = visitors_per_day * pass_share * useful_steps
-    return (steps * joules_per_step * efficiency * (1 - storage_loss)) / 3600
-
-def m2_to_ft2(x):
-    return x * 10.7639104167
-
-def cost_model(area_m2, cost_per_ft2, fixed_cost, maint_rate, years, annual_kwh):
-    area_ft2 = m2_to_ft2(area_m2)
-    capex = area_ft2 * cost_per_ft2 + fixed_cost
-    opex_year = maint_rate * capex
-    total_cost = capex + opex_year * years
-    total_kwh = max(1e-9, annual_kwh * years)
-    return capex, opex_year, total_cost, (total_cost / total_kwh)
-
-def forecast_visitors(df, horizon_days=30):
-    df = df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
-    df["t"] = (df["date"] - df["date"].min()).dt.days.astype(int)
-
-    X = df[["t"]].values
-    y = df["visitors"].values
-    model = LinearRegression()
-    model.fit(X, y)
-
-    last = df["date"].max()
-    future = []
-    for i in range(1, horizon_days + 1):
-        d = last + pd.Timedelta(days=i)
-        t = int((d - df["date"].min()).days)
-        pred = max(0.0, float(model.predict([[t]])[0]))
-        future.append({"date": d.date(), "visitors_pred": pred})
-    return pd.DataFrame(future)
-
+# -----------------------------
+# Inputs tab
+# -----------------------------
 with tabs[0]:
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns([1.2, 1.2, 1.0], gap="large")
 
-    with col1:
-        place_type = st.selectbox("Type de lieu", ["Musée", "Gare", "Stade/Arena", "Centre commercial", "Campus/Université", "Autre"])
-        visitors_per_day = st.number_input("Visiteurs / jour (moyenne)", min_value=0, value=1000, step=50)
-        peak_multiplier = st.slider("Multiplicateur pic (weekend/événement)", 1.0, 5.0, 1.5, 0.1)
+    with c1:
+        st.subheader("Context")
+        place_type = st.selectbox("Type de lieu", ["Musée", "Gare", "Stade", "Centre commercial", "Autre"])
+        visitors_per_day = st.number_input("Visiteurs / jour (moyenne)", min_value=0.0, value=2000.0, step=50.0)
+        peak_multiplier = st.slider("Multiplicateur pic (week-end / événement)", 1.0, 5.0, 1.5, 0.1)
+        avg_duration_hours = st.slider("Durée moyenne de présence (heures)", 0.5, 8.0, 2.0, 0.5)
 
-    with col2:
-        pass_share = st.slider("% visiteurs passant sur la zone équipée", 0.0, 30.0, 5.0, 0.5) / 100.0
-        useful_steps = st.slider("Pas utiles / visiteur sur zone", 0, 400, 80, 10)
+        st.subheader("Flow on equipped zone")
+        pct_on_zone = st.slider("% visiteurs passant sur la zone équipée", 0.0, 30.0, 5.0, 0.5)
+        useful_steps = st.slider("Pas utiles / visiteur sur zone", 0.0, 300.0, 80.0, 5.0)
+
+    with c2:
+        st.subheader("Technical assumptions")
         joules_per_step = st.slider("Énergie par pas (J)", 1.0, 6.0, 3.0, 0.1)
-        efficiency = st.slider("Rendement global", 0.0, 1.0, 0.5, 0.05)
-        storage_loss = st.slider("Pertes stockage/conversion", 0.0, 0.5, 0.1, 0.05)
+        efficiency = st.slider("Rendement global", 0.1, 0.9, 0.5, 0.05)
+        storage_losses = st.slider("Pertes stockage / conversion", 0.0, 0.5, 0.1, 0.05)
 
-    with col3:
-        st.markdown("### Coûts")
-        installed_cost_per_ft2 = st.slider("Coût installé ($/ft²)", 50.0, 1000.0, 120.0, 5.0)
-        fixed_install_cost = st.number_input("Coût fixe (travaux/élec/signalétique) $", min_value=0.0, value=10000.0, step=1000.0)
-        annual_maintenance_rate = st.slider("Maintenance annuelle (% CAPEX)", 0.0, 20.0, 5.0, 0.5) / 100.0
-        amort_years = st.slider("Amortissement (années)", 1, 15, 7, 1)
+        st.subheader("Installation sizing (simple)")
+        surface_ft2 = st.number_input("Surface équipée (ft²)", min_value=1.0, value=120.0, step=10.0)
+        tile_area_ft2 = st.number_input("Surface d’une dalle (ft²)", min_value=0.1, value=1.0, step=0.1)
 
-    st.divider()
-    st.subheader("Données (bonus) + IA (prévision) + CodeCarbon")
-    st.write("Upload CSV avec colonnes: `date, visitors`. Sinon, tu peux utiliser le dataset démo.")
+    with c3:
+        st.subheader("Costs")
+        installed_cost_per_ft2 = st.slider("Coût installé ($/ft²)", 50.0, 900.0, 120.0, 5.0)
+        fixed_cost = st.number_input("Coût fixe (travaux/élec/signalétique) $", min_value=0.0, value=10000.0, step=500.0)
+        maintenance_pct = st.slider("Maintenance annuelle (% du CAPEX)", 0.0, 20.0, 8.0, 0.5)
+        amort_years = st.slider("Amortissement (années)", 1, 20, 7, 1)
 
-    uploaded = st.file_uploader("Upload CSV", type=["csv"])
-    use_sample = st.checkbox("Utiliser dataset démo", value=True)
-
-    df = None
-    if uploaded is not None:
-        df = pd.read_csv(uploaded)
-    elif use_sample:
-        df = pd.read_csv("data/sample_visitors.csv")
-
-    if df is not None:
-        st.dataframe(df.head(10), use_container_width=True)
-
-    run_forecast = st.button("Lancer prévision (IA légère) + mesurer empreinte (CodeCarbon)")
-    if run_forecast and df is not None:
-        tracker = EmissionsTracker(project_name="kinetic-impact-calculator")
-        tracker.start()
-        fc = forecast_visitors(df, horizon_days=30)
-        kg = tracker.stop()
-        st.session_state["forecast_df"] = fc
-        st.session_state["codecarbon_kg"] = kg
-        st.success("Prévision générée.")
-        st.dataframe(fc.head(10), use_container_width=True)
-        st.info(f"CodeCarbon (kgCO₂e) : {kg:.6f}" if kg is not None else "CodeCarbon non disponible ici, mais l’instrumentation est en place.")
-
-with tabs[1]:
-    st.subheader("Résultats")
-
-    visitors_mid = float(visitors_per_day)
-    if "forecast_df" in st.session_state:
-        visitors_mid = float(st.session_state["forecast_df"]["visitors_pred"].mean())
-
-    wh_day_mid = energy_wh_per_day(visitors_mid, pass_share, useful_steps, joules_per_step, efficiency, storage_loss)
-    wh_day_peak = energy_wh_per_day(visitors_mid * peak_multiplier, pass_share, useful_steps, joules_per_step, efficiency, storage_loss)
-
-    kwh_year = (wh_day_mid * 365) / 1000
-
-    st.metric("Wh/jour (moyen)", f"{wh_day_mid:.1f}")
-    st.metric("kWh/an (moyen)", f"{kwh_year:.2f}")
-    st.metric("Wh/jour (pic)", f"{wh_day_peak:.1f}")
-
-    st.divider()
-    st.subheader("Équivalences (indicatives)")
-    st.write(f"LED 10W : ~{(wh_day_mid/10):.1f} heures/jour")
-    st.write(f"Écran 20W : ~{(wh_day_mid/20):.1f} heures/jour")
-
-    st.divider()
-    st.subheader("Matériel & coûts")
-    walk_zone_area_m2 = st.number_input("Surface potentielle de zone piétonne (m²)", min_value=0.0, value=20.0, step=1.0)
-    tile_area_m2 = st.number_input("Surface d’une dalle (m²)", min_value=0.01, value=0.25, step=0.01)
-
-    area_equipped_m2 = walk_zone_area_m2 * pass_share
-    tiles = int(math.ceil(area_equipped_m2 / tile_area_m2))
-
-    capex, opex_year, total_cost, cost_per_kwh = cost_model(
-        area_equipped_m2, installed_cost_per_ft2, fixed_install_cost,
-        annual_maintenance_rate, amort_years, kwh_year
+    inp = Inputs(
+        place_type=place_type,
+        visitors_per_day=visitors_per_day,
+        peak_multiplier=peak_multiplier,
+        avg_duration_hours=avg_duration_hours,
+        pct_on_zone=pct_on_zone,
+        useful_steps_per_person=useful_steps,
+        joules_per_step=joules_per_step,
+        efficiency=efficiency,
+        storage_losses=storage_losses,
+        installed_cost_per_ft2=installed_cost_per_ft2,
+        fixed_cost=fixed_cost,
+        maintenance_pct_per_year=maintenance_pct,
+        amort_years=amort_years,
+        surface_ft2=surface_ft2,
+        tile_area_ft2=tile_area_ft2,
     )
 
-    st.write(f"Surface équipée estimée : {area_equipped_m2:.2f} m² (~{m2_to_ft2(area_equipped_m2):.1f} ft²)")
-    st.write(f"Nombre de dalles (est.) : {tiles}")
-    st.write(f"CAPEX : ${capex:,.0f}")
-    st.write(f"OPEX/an : ${opex_year:,.0f}")
-    st.write(f"Coût/kWh (sur {amort_years} ans) : ${cost_per_kwh:,.0f} / kWh")
+    st.info("✅ Astuce capstone : tu peux dire que l’objectif est *d’éviter la sur-installation* (matériaux/maintenance) via scénarios + prévision IA.")
+
+# -----------------------------
+# Results tab
+# -----------------------------
+with tabs[1]:
+    # Base energy
+    wh_day = energy_wh_per_day(
+        inp.visitors_per_day,
+        inp.peak_multiplier,
+        inp.pct_on_zone,
+        inp.useful_steps_per_person,
+        inp.joules_per_step,
+        inp.efficiency,
+        inp.storage_losses,
+    )
+    kwh_day = wh_to_kwh(wh_day)
+    periods = kwh_periods(kwh_day)
+
+    # Equivalences (local use)
+    led10w_hours = (kwh_day * 1000.0) / 10.0 if kwh_day > 0 else 0.0
+    screen25w_hours = (kwh_day * 1000.0) / 25.0 if kwh_day > 0 else 0.0
+    sensor1w_hours = (kwh_day * 1000.0) / 1.0 if kwh_day > 0 else 0.0
+
+    # Costs
+    capex, opex_per_year, years = capex_opex_costs(
+        inp.surface_ft2, inp.installed_cost_per_ft2, inp.fixed_cost, inp.maintenance_pct_per_year, inp.amort_years
+    )
+    cost_kwh = cost_per_kwh(capex, opex_per_year, years, periods["kWh/year (~365d)"])
+
+    # Go/No-Go
+    verdict, reason = go_nogo(kwh_day, cost_kwh, led10w_hours, screen25w_hours)
+
+    # Tiles
+    num_tiles = int(np.ceil(inp.surface_ft2 / inp.tile_area_ft2))
+
+    st.subheader("Key outputs")
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("kWh / day", f"{periods['kWh/day']:.3f}")
+    k2.metric("kWh / month", f"{periods['kWh/month (~30d)']:.2f}")
+    k3.metric("kWh / year", f"{periods['kWh/year (~365d)']:.1f}")
+    k4.metric("Estimated tiles", f"{num_tiles}")
+
+    st.subheader("What can it power (local + pedagogy)")
+    st.write(
+        f"- **LED strip (10W)**: ~**{led10w_hours:.1f} h/day**\n"
+        f"- **Small screen (25W)**: ~**{screen25w_hours:.1f} h/day**\n"
+        f"- **Sensor (1W)**: ~**{sensor1w_hours:.0f} h/day**"
+    )
+
+    st.subheader("Business / decision")
+    b1, b2, b3 = st.columns(3)
+    b1.metric("CAPEX (est.)", f"${capex:,.0f}")
+    b2.metric("OPEX / year (est.)", f"${opex_per_year:,.0f}")
+    b3.metric("Cost per kWh (est.)", "∞" if not np.isfinite(cost_kwh) else f"${cost_kwh:,.2f}")
+
+    st.markdown(f"### Verdict: **{verdict}**")
+    st.caption(reason)
+    st.warning("⚠️ Note anti-greenwashing: l’énergie est souvent **modeste** — l’intérêt est surtout **local + engagement/pédagogie** (ex: Coldplay).")
+
+    st.subheader("Uncertainty scenarios (Low / Mid / High)")
+    df_s = scenario_pack(inp)
+    st.dataframe(df_s, use_container_width=True)
+
+    # Export results
+    st.subheader("Export")
+    export = {
+        **periods,
+        "LED_10W_hours_per_day": led10w_hours,
+        "Screen_25W_hours_per_day": screen25w_hours,
+        "CAPEX": capex,
+        "OPEX_per_year": opex_per_year,
+        "Cost_per_kWh": cost_kwh,
+        "Verdict": verdict,
+        "Reason": reason,
+        "Surface_ft2": inp.surface_ft2,
+        "Tiles": num_tiles,
+    }
+    df_export = pd.DataFrame([export])
+    csv_bytes = df_export.to_csv(index=False).encode("utf-8")
+    st.download_button("Download results (CSV)", data=csv_bytes, file_name="kinetic_impact_results.csv", mime="text/csv")
 
     st.divider()
-    st.subheader("Verdict GO / NO-GO (anti-gadget)")
-    goal_wh = st.number_input("Objectif Wh/jour (usage local)", min_value=0.0, value=100.0, step=10.0)
-    max_cost_kwh = st.number_input("Seuil coût/kWh acceptable", min_value=1.0, value=500.0, step=50.0)
 
-    reasons = []
-    if wh_day_mid < goal_wh:
-        reasons.append("Ne couvre pas l’objectif énergétique journalier (scénario moyen).")
-    if kwh_year < 10:
-        reasons.append("Énergie annuelle très faible (<10 kWh/an) → intérêt surtout pédagogique.")
-    if cost_per_kwh > max_cost_kwh:
-        reasons.append("Coût/kWh élevé vs seuil choisi.")
+    # -----------------------------
+    # IA Section: Forecast visitors + CodeCarbon
+    # -----------------------------
+    st.subheader("Sustainable AI (lightweight): visitor forecast → better sizing (avoid over-installation)")
+    st.caption("Upload a CSV with columns: date, visitors (or use demo). Then we predict the next 10 days with a tiny linear model.")
 
-    if len(reasons) == 0:
-        st.success("✅ GO — dimensionnement cohérent avec l’objectif et les seuils.")
+    use_demo = st.checkbox("Use demo dataset", value=True)
+    uploaded = st.file_uploader("Upload CSV", type=["csv"], disabled=use_demo)
+
+    if use_demo:
+        demo = pd.DataFrame({
+            "date": pd.date_range("2025-11-01", periods=10, freq="D"),
+            "visitors": [1200, 1500, 900, 950, 980, 1100, 1300, 1600, 1800, 1000],
+        })
+        df_in = demo
     else:
-        st.warning("⚠️ NO-GO — " + " ".join(reasons))
+        df_in = None
+        if uploaded is not None:
+            df_in = pd.read_csv(uploaded)
 
-    st.divider()
-    st.subheader("Export (CSV)")
-    export = pd.DataFrame({
-        "metric": ["visitors_mid", "wh_day_mid", "kwh_year", "capex", "opex_year", "cost_per_kwh"],
-        "value": [visitors_mid, wh_day_mid, kwh_year, capex, opex_year, cost_per_kwh]
-    })
-    bio = io.StringIO()
-    export.to_csv(bio, index=False)
-    st.download_button("Télécharger résumé (CSV)", bio.getvalue(), file_name="kinetic_summary.csv", mime="text/csv")
+    if df_in is not None:
+        st.dataframe(df_in, use_container_width=True)
 
+        horizon = st.slider("Forecast horizon (days)", 5, 60, 10, 1)
+        run = st.button("Run forecast + measure footprint (CodeCarbon)")
+
+        if run:
+            tracker, cc_err = run_codecarbon()
+
+            try:
+                # Forecast
+                df_in2 = df_in.copy()
+                # Normalize column names
+                df_in2.columns = [c.strip().lower() for c in df_in2.columns]
+                if "date" not in df_in2.columns or "visitors" not in df_in2.columns:
+                    st.error("CSV must contain columns: date, visitors")
+                else:
+                    forecast = forecast_visitors_linear(df_in2[["date", "visitors"]], horizon_days=horizon)
+                    st.success("Forecast generated.")
+
+                    st.dataframe(forecast, use_container_width=True)
+
+                    # Convert forecast to energy range using current assumptions (mid scenario)
+                    # Use predicted visitors as visitors/day (average) and compute kWh/day
+                    tmp = forecast.copy()
+                    tmp["kWh_day_pred"] = tmp["visitors_pred"].apply(
+                        lambda v: wh_to_kwh(
+                            energy_wh_per_day(
+                                v,
+                                inp.peak_multiplier,
+                                inp.pct_on_zone,
+                                inp.useful_steps_per_person,
+                                inp.joules_per_step,
+                                inp.efficiency,
+                                inp.storage_losses,
+                            )
+                        )
+                    )
+                    st.line_chart(tmp.set_index("date")[["kWh_day_pred"]])
+
+                    # CodeCarbon results
+                    emissions = None
+                    if tracker is not None:
+                        try:
+                            emissions = tracker.stop()  # kgCO2e
+                        except Exception:
+                            emissions = None
+
+                    if CODECARBON_OK and emissions is not None:
+                        st.info(f"CodeCarbon estimate (kgCO₂e): **{emissions:.6f}**")
+                    elif CODECARBON_OK and cc_err:
+                        st.warning(f"CodeCarbon could not start: {cc_err}")
+                    elif not CODECARBON_OK:
+                        st.warning("CodeCarbon not available (missing dependency).")
+
+            except Exception as e:
+                if tracker is not None:
+                    try:
+                        tracker.stop()
+                    except Exception:
+                        pass
+                st.error(f"Forecast error: {e}")
+
+# -----------------------------
+# Methodology tab
+# -----------------------------
 with tabs[2]:
-    st.subheader("Méthodologie & transparence")
-    st.markdown("""
-- **Pas captés/jour** = visiteurs × %passage × pas utiles  
-- **Wh/jour** = pas captés × J/pas × rendement × (1 - pertes) / 3600  
-- **CAPEX** = surface(ft²) × coût($/ft²) + coût fixe  
-- **OPEX** = maintenance × CAPEX  
-- **IA** : prévision simple de fréquentation à partir d’un CSV (régression linéaire légère)  
-- **CodeCarbon** : mesure l’empreinte (kgCO₂e) de l’étape prévision (calcul IA)  
-- **Données** : agrégées (pas de tracking individuel)  
-- **Limite** : énergie souvent modeste → usages locaux + valeur pédagogique/engagement
-""")
+    st.subheader("Formula (transparent)")
+    st.markdown(
+        """
+**Steps captured/day** = visitors/day × peak_multiplier × (% on zone) × useful_steps/person
+
+**Energy (Wh/day)** = steps_captured × J_per_step × efficiency × (1 - losses) ÷ 3600
+
+This is an **order-of-magnitude** model to support decisions (not a guarantee).
+"""
+    )
+
+    st.subheader("Interpretation (anti-greenwashing)")
+    st.markdown(
+        """
+- Output energy is often **modest** → best for **local loads** (LEDs, sensors, small screen).
+- The main value can be **engagement/pedagogy** (making energy tangible), plus **better sizing** (avoid wasting materials).
+"""
+    )
+
+    st.subheader("What makes it 'Sustainable AI'")
+    st.markdown(
+        """
+- The forecast model is **tiny** (simple trend line) → cheap in compute.
+- Goal: **avoid over-installation** (materials, maintenance, CAPEX) by sizing based on predicted demand.
+- CodeCarbon provides a **footprint estimate** for the AI run.
+"""
+    )
