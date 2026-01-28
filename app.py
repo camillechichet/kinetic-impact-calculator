@@ -19,10 +19,6 @@ def realism_badge(label: str, value: float, ok_range: tuple[float, float], warn_
 
 
 def verdict_badge(kind: str, reason: str) -> tuple[str, str]:
-    """
-    Returns (badge_text, streamlit_kind) where streamlit_kind is one of:
-    "success", "warning", "error", "info"
-    """
     k = kind.upper().strip()
     if k == "GO":
         return (f"✅ GO — {reason}", "success")
@@ -43,6 +39,10 @@ def fmt_num(x: float, nd: int = 2) -> str:
 
 def safe_div(a: float, b: float) -> float:
     return a / b if b != 0 else float("nan")
+
+
+def ft2_to_m2(x_ft2: float) -> float:
+    return x_ft2 * 0.092903
 
 
 def make_demo_visitors(n_days: int = 60, start: date | None = None) -> pd.DataFrame:
@@ -117,41 +117,45 @@ PRESETS = {
         "pct_on_zone": 8.0,
         "useful_steps": 60.0,
         "peak_multiplier": 1.2,
-        "avg_presence_hours": 2.0,
         "area_ft2": 120.0,
         "visitors_per_day": 1200,
         "installed_cost_per_ft2": 140.0,
         "fixed_cost": 12000.0,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 0.0,
     },
     "Gare": {
         "pct_on_zone": 18.0,
         "useful_steps": 120.0,
         "peak_multiplier": 1.5,
-        "avg_presence_hours": 0.75,
         "area_ft2": 220.0,
         "visitors_per_day": 8000,
         "installed_cost_per_ft2": 160.0,
         "fixed_cost": 25000.0,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 5.0,
     },
     "Stade": {
         "pct_on_zone": 12.0,
         "useful_steps": 80.0,
         "peak_multiplier": 2.5,
-        "avg_presence_hours": 3.0,
         "area_ft2": 300.0,
         "visitors_per_day": 25000,
         "installed_cost_per_ft2": 180.0,
         "fixed_cost": 40000.0,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 10.0,
     },
     "Centre commercial": {
         "pct_on_zone": 10.0,
         "useful_steps": 90.0,
         "peak_multiplier": 1.4,
-        "avg_presence_hours": 1.5,
         "area_ft2": 180.0,
         "visitors_per_day": 6000,
         "installed_cost_per_ft2": 150.0,
         "fixed_cost": 20000.0,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 5.0,
     },
 }
 
@@ -161,48 +165,42 @@ EXAMPLE_SCENARIOS = {
         "visitors_per_day": 1500,
         "pct_on_zone": 8.0,
         "useful_steps": 60.0,
-        "J_per_step": 3.0,
-        "efficiency": 0.5,
-        "storage_loss": 0.10,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 0.0,
         "area_ft2": 120.0,
         "installed_cost_per_ft2": 140.0,
         "fixed_cost": 12000.0,
         "maintenance_pct": 6.0,
         "amort_years": 8,
         "peak_multiplier": 1.2,
-        "avg_presence_hours": 2.0,
     },
     "Gare (réaliste)": {
         "place_type": "Gare",
         "visitors_per_day": 12000,
         "pct_on_zone": 18.0,
         "useful_steps": 120.0,
-        "J_per_step": 3.0,
-        "efficiency": 0.5,
-        "storage_loss": 0.10,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 5.0,
         "area_ft2": 220.0,
         "installed_cost_per_ft2": 160.0,
         "fixed_cost": 25000.0,
         "maintenance_pct": 8.0,
         "amort_years": 10,
         "peak_multiplier": 1.5,
-        "avg_presence_hours": 0.75,
     },
     "Stade (événement)": {
         "place_type": "Stade",
         "visitors_per_day": 35000,
         "pct_on_zone": 12.0,
         "useful_steps": 80.0,
-        "J_per_step": 3.0,
-        "efficiency": 0.5,
-        "storage_loss": 0.10,
+        "J_net_per_step": 0.5,
+        "auto_consumption_wh_day": 10.0,
         "area_ft2": 300.0,
         "installed_cost_per_ft2": 180.0,
         "fixed_cost": 40000.0,
         "maintenance_pct": 8.0,
         "amort_years": 10,
         "peak_multiplier": 2.5,
-        "avg_presence_hours": 3.0,
     },
 }
 
@@ -227,18 +225,24 @@ DEFAULTS = {
     "place_type": "Musée",
     "visitors_per_day": 3300,
     "peak_multiplier": 1.0,
-    "avg_presence_hours": 2.5,
     "pct_on_zone": 12.0,
     "useful_steps": 115.0,
-    "J_per_step": 3.0,
-    "efficiency": 0.50,
-    "storage_loss": 0.10,
+
+    # NEW: single net electrical energy per step (no double counting)
+    "J_net_per_step": 0.5,  # J_net/step
+
+    # NEW: auto-consumption
+    "auto_consumption_wh_day": 0.0,
+
+    # sizing + costs
     "area_ft2": 190.0,
     "tile_area_ft2": 1.10,
     "installed_cost_per_ft2": 175.0,
     "fixed_cost": 20000.0,
     "maintenance_pct": 8.0,
     "amort_years": 9,
+
+    # forecast
     "forecast_horizon_days": 14,
     "use_demo_dataset": True,
 }
@@ -273,9 +277,10 @@ with top_r:
         st.markdown(
             """
 1) Choisis un **type de lieu** puis clique **Appliquer preset** (ou charge un scénario).  
-2) Ajuste **% sur zone** et **pas utiles** (badges ✅⚠️🚩).  
-3) Va sur **Results** pour voir **Executive summary + 2 verdicts**.  
-4) Option : CSV (**date, visitors**) pour la **prévision** (IA légère).
+2) Ajuste **% sur zone** et **pas utiles** (badges ✅⚠️🚩 + warning cohérence).  
+3) Ajuste **J_net/pas** (énergie électrique nette récupérée par pas) + **auto-consommation**.  
+4) Va sur **Results** pour voir **Executive summary + 2 verdicts**.  
+5) Option : CSV (**date, visitors**) pour la **prévision** (IA légère).
 """
         )
 
@@ -324,13 +329,6 @@ with tab_inputs:
         st.caption("Ex: 1.0 (normal), 1.2–1.8 (week-end), 2–3 (événement)")
         st.write(realism_badge("Pic", peak_multiplier, ok_range=(1.0, 2.5), warn_range=(1.0, 4.0)))
 
-        avg_presence_hours = st.slider(
-            "Durée moyenne de présence (heures)",
-            0.25, 6.0, float(st.session_state.inputs["avg_presence_hours"]), 0.25
-        )
-        st.caption("Ex: gare 0.25–1h ; musée 1–3h ; stade 2–5h")
-        st.write(realism_badge("Présence", avg_presence_hours, ok_range=(0.5, 4.0), warn_range=(0.25, 6.0)))
-
         st.markdown("---")
         st.subheader("Flow on equipped zone")
 
@@ -351,26 +349,25 @@ with tab_inputs:
     with c2:
         st.subheader("Technical assumptions")
 
-        J_per_step = st.slider(
-            "Énergie par pas (J)",
-            1.0, 6.0, float(st.session_state.inputs["J_per_step"]), 0.1
+        # A + B: replace J + efficiency + losses by ONE parameter: J_net per step
+        J_net_per_step = st.slider(
+            "Énergie électrique nette récupérée par pas (J_net/pas)",
+            0.005, 1.0, float(st.session_state.inputs["J_net_per_step"]), 0.005
         )
-        st.caption("Ordre de grandeur: 2–4 J/pas (typique, souvent cité).")
-        st.write(realism_badge("J/pas", J_per_step, ok_range=(2.0, 4.0), warn_range=(1.0, 6.0)))
+        st.caption(
+            "Définition : énergie électrique réellement délivrée à une charge/stockage, déjà 'net'. "
+            "Ex: tribo ~mJ → EM ~centaines de mJ."
+        )
+        st.write(realism_badge("J_net/pas", J_net_per_step, ok_range=(0.05, 0.8), warn_range=(0.01, 1.0)))
 
-        efficiency = st.slider(
-            "Rendement global",
-            0.10, 0.90, float(st.session_state.inputs["efficiency"]), 0.01
+        # C: auto-consumption
+        auto_consumption_wh_day = st.number_input(
+            "Auto-consommation système (Wh/jour)",
+            min_value=0.0,
+            value=float(st.session_state.inputs["auto_consumption_wh_day"]),
+            step=1.0
         )
-        st.caption("Inclut mécanique + conversion: souvent 0.3–0.6.")
-        st.write(realism_badge("Rendement", efficiency, ok_range=(0.30, 0.60), warn_range=(0.15, 0.80)))
-
-        storage_loss = st.slider(
-            "Pertes stockage / conversion",
-            0.0, 0.50, float(st.session_state.inputs["storage_loss"]), 0.01
-        )
-        st.caption("Ex: 5–20% selon stockage/régulation.")
-        st.write(realism_badge("Pertes", storage_loss, ok_range=(0.05, 0.20), warn_range=(0.0, 0.35)))
+        st.caption("Ex: contrôleur/communication/LED 'always-on' peut consommer quelques Wh/j et annuler le gain à faible énergie.")
 
         st.markdown("---")
         st.subheader("Installation sizing (simple)")
@@ -393,6 +390,24 @@ with tab_inputs:
 
         est_tiles = int(round(area_ft2 / tile_area_ft2))
         st.info(f"Estimation: ~ **{est_tiles} dalles** pour {fmt_num(area_ft2,0)} ft² (si 1 dalle ≈ {fmt_num(tile_area_ft2,2)} ft²).")
+
+        # E: coherence warning (rough geometry sanity check)
+        # Assume zone length ~ sqrt(area_m2) and step length ~ v/f with v=1.34 m/s, f=2 Hz => 0.67 m/step
+        area_m2 = ft2_to_m2(area_ft2)
+        approx_length_m = max(0.5, float(np.sqrt(area_m2)))  # avoid 0 for tiny areas
+        v_free = 1.34
+        f_step = 2.0
+        step_len = v_free / f_step  # ~0.67 m
+        max_steps_single_cross = approx_length_m / step_len
+        # allow some back-and-forth / meandering: ×2.5
+        plausible_upper_steps = 2.5 * max_steps_single_cross
+
+        if useful_steps > plausible_upper_steps and useful_steps > 30:
+            st.warning(
+                f"⚠️ Contrôle cohérence : **{fmt_num(useful_steps,0)} pas/visiteur** paraît élevé "
+                f"vs une zone de ~{fmt_num(area_ft2,0)} ft² (longueur typique ~{fmt_num(approx_length_m,1)} m). "
+                f"Risque de **surestimation**. (Check surtout l'emplacement + la longueur réellement traversée.)"
+            )
 
     with c3:
         st.subheader("Costs")
@@ -428,19 +443,16 @@ with tab_inputs:
         use_demo = st.checkbox("Utiliser dataset démo", value=bool(st.session_state.inputs["use_demo_dataset"]))
         uploaded = st.file_uploader("Upload CSV (colonnes: date, visitors)", type=["csv"])
         horizon = st.slider("Horizon de prévision (jours)", 7, 60, int(st.session_state.inputs["forecast_horizon_days"]), 1)
-
         st.caption("IA frugale : trend + saisonnalité (jours de semaine).")
 
         # Store all inputs
         st.session_state.inputs.update({
             "visitors_per_day": int(visitors_per_day),
             "peak_multiplier": float(peak_multiplier),
-            "avg_presence_hours": float(avg_presence_hours),
             "pct_on_zone": float(pct_on_zone),
             "useful_steps": float(useful_steps),
-            "J_per_step": float(J_per_step),
-            "efficiency": float(efficiency),
-            "storage_loss": float(storage_loss),
+            "J_net_per_step": float(J_net_per_step),
+            "auto_consumption_wh_day": float(auto_consumption_wh_day),
             "area_ft2": float(area_ft2),
             "tile_area_ft2": float(tile_area_ft2),
             "installed_cost_per_ft2": float(installed_cost_per_ft2),
@@ -495,51 +507,53 @@ steps_captured = (
     * inp["useful_steps"]
 )
 
-energy_wh_day = steps_captured * inp["J_per_step"] * inp["efficiency"] * (1.0 - inp["storage_loss"]) / 3600.0
-energy_kwh_day = energy_wh_day / 1000.0
+# Net electrical energy harvested (no efficiency/loss terms anymore)
+gross_energy_wh_day = steps_captured * inp["J_net_per_step"] / 3600.0
 
-# Always show both units, consistent order: Wh/day then kWh/day then kWh/year
-energy_wh_year = energy_wh_day * 365.0
-energy_kwh_month = energy_kwh_day * 30.0
-energy_kwh_year = energy_kwh_day * 365.0
+# Subtract auto-consumption explicitly, clamp at 0
+net_energy_wh_day = max(0.0, gross_energy_wh_day - inp["auto_consumption_wh_day"])
+
+net_energy_kwh_day = net_energy_wh_day / 1000.0
+net_energy_kwh_month = net_energy_kwh_day * 30.0
+net_energy_kwh_year = net_energy_kwh_day * 365.0
 
 # Costs
 capex = inp["area_ft2"] * inp["installed_cost_per_ft2"] + inp["fixed_cost"]
 opex_year = (inp["maintenance_pct"] / 100.0) * capex
 N = inp["amort_years"]
 total_cost_N = capex + opex_year * N
-cost_per_kwh = safe_div(total_cost_N, energy_kwh_year * N) if energy_kwh_year > 0 else float("inf")
+cost_per_kwh = safe_div(total_cost_N, net_energy_kwh_year * N) if net_energy_kwh_year > 0 else float("inf")
 
-# Uncertainty scenarios
+# Uncertainty scenarios (keep for communication; based mainly on % on zone + steps variability)
 scenarios = {"low": 0.6, "mid": 1.0, "high": 1.4}
 rows = []
 for name, mult in scenarios.items():
-    wh = energy_wh_day * mult
+    wh = net_energy_wh_day * mult
     rows.append({"scenario": name, "Wh/day": wh, "kWh/day": wh / 1000.0})
 df_scen = pd.DataFrame(rows)
 
 # Equivalences (per day)
-led10w_hours_per_day = safe_div(energy_wh_day, 10.0)
-phone_charges_per_day = safe_div(energy_wh_day, 12.0)
-sensor1w_hours_per_day = safe_div(energy_wh_day, 1.0)  # 1W for 1 hour = 1Wh
-eink_sign_days_per_day = safe_div(energy_wh_day, 2.0)   # example: 2Wh/day
-co2_sensor_days_per_day = safe_div(energy_wh_day, 5.0)  # example: 5Wh/day
-projector_minutes_per_day = safe_div(energy_wh_day, 200.0) * 60.0  # 200W projector
+led10w_hours_per_day = safe_div(net_energy_wh_day, 10.0)
+phone_charges_per_day = safe_div(net_energy_wh_day, 12.0)
+sensor1w_hours_per_day = safe_div(net_energy_wh_day, 1.0)  # 1W for 1 hour = 1Wh
+eink_sign_days_per_day = safe_div(net_energy_wh_day, 2.0)   # 2Wh/day
+co2_sensor_days_per_day = safe_div(net_energy_wh_day, 5.0)  # 5Wh/day
+projector_minutes_per_day = safe_div(net_energy_wh_day, 200.0) * 60.0  # 200W projector
 
 # Verdicts (split in 2) + reason
 # ROI energy
-if energy_kwh_year <= 0:
-    roi_kind, roi_reason = "NO-GO", "énergie estimée ~0 (vérifie % sur zone / pas utiles)."
-elif np.isfinite(cost_per_kwh) and cost_per_kwh < 5 and energy_kwh_year > 300:
+if net_energy_kwh_year <= 0:
+    roi_kind, roi_reason = "NO-GO", "énergie nette ~0 après auto-consommation (vérifie paramètres + auto-conso)."
+elif np.isfinite(cost_per_kwh) and cost_per_kwh < 5 and net_energy_kwh_year > 300:
     roi_kind, roi_reason = "MIXED", "ROI devient moins extrême, mais reste rarement compétitif vs réseau."
 else:
-    roi_kind, roi_reason = "NO-GO", "coût/kWh très élevé vs production (énergie récupérée généralement modeste)."
+    roi_kind, roi_reason = "NO-GO", "coût/kWh très élevé vs production (energy harvesting généralement modeste)."
 
 # Pedagogy / engagement
 if inp["pct_on_zone"] < 1.0 or inp["useful_steps"] < 10:
     ped_kind, ped_reason = "MIXED", "zone trop peu traversée → revoir emplacement ou surface."
 else:
-    ped_kind, ped_reason = "GO", "forte valeur d’engagement : rendre l’énergie tangible + micro-usages locaux."
+    ped_kind, ped_reason = "GO", "valeur forte d’engagement : rendre l’énergie tangible + micro-usages locaux."
 
 key_driver = "La réalité dépend surtout de **% sur zone** et **pas utiles** (emplacement + design du parcours)."
 
@@ -554,18 +568,21 @@ with tab_results:
     with st.container(border=True):
         st.markdown("### Executive summary (résumé décisionnel)")
 
-        # Energy label
-        energy_label = f"{fmt_num(energy_kwh_year, 1)} kWh/an"
-        if energy_kwh_year < 10:
+        energy_label = f"{fmt_num(net_energy_kwh_year, 2)} kWh/an"
+        if net_energy_kwh_year < 10:
             energy_label += " (très faible)"
-        elif energy_kwh_year < 100:
+        elif net_energy_kwh_year < 100:
             energy_label += " (modeste)"
 
         usage_realiste = "LEDs / capteurs / petit affichage (micro-usages locaux)"
 
-        st.write(f"**Énergie estimée** : {energy_label}")
+        st.write(f"**Énergie nette estimée** : {energy_label}")
         st.write(f"**Usage réaliste** : {usage_realiste}")
-        st.write(f"**Coût total** : {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/an OPEX → ~ **{fmt_num(cost_per_kwh, 2)} $/kWh**")
+        st.write(
+            f"**Coût total** : {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/an OPEX → "
+            f"~ **{fmt_num(cost_per_kwh, 2)} $/kWh**"
+        )
+        st.caption(f"Note: énergie brute ~ {fmt_num(gross_energy_wh_day,2)} Wh/j — auto-conso {fmt_num(inp['auto_consumption_wh_day'],2)} Wh/j → nette {fmt_num(net_energy_wh_day,2)} Wh/j.")
 
         roi_text, roi_style = verdict_badge(roi_kind, roi_reason)
         ped_text, ped_style = verdict_badge(ped_kind, ped_reason)
@@ -590,10 +607,10 @@ with tab_results:
 
     # Metrics: consistent units order
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Wh / jour", fmt_num(energy_wh_day, 2))
-    m2.metric("kWh / jour", fmt_num(energy_kwh_day, 4))
-    m3.metric("kWh / mois (~30j)", fmt_num(energy_kwh_month, 2))
-    m4.metric("kWh / an (~365j)", fmt_num(energy_kwh_year, 1))
+    m1.metric("Wh / jour (net)", fmt_num(net_energy_wh_day, 2))
+    m2.metric("kWh / jour (net)", fmt_num(net_energy_kwh_day, 5))
+    m3.metric("kWh / mois (~30j)", fmt_num(net_energy_kwh_month, 3))
+    m4.metric("kWh / an (~365j)", fmt_num(net_energy_kwh_year, 2))
 
     # Scenarios chart
     st.markdown("### Uncertainty scenarios (visual)")
@@ -601,12 +618,12 @@ with tab_results:
     scen_plot["scenario"] = pd.Categorical(scen_plot["scenario"], categories=["low", "mid", "high"], ordered=True)
     scen_plot = scen_plot.sort_values("scenario").set_index("scenario")[["Wh/day"]]
     st.bar_chart(scen_plot)
-    st.caption("🧠 Interprétation : l’incertitude vient surtout de **% sur zone** et **pas utiles**.")
+    st.caption("🧠 Interprétation : l’incertitude vient surtout de **% sur zone** et **pas utiles** (emplacement + parcours).")
 
     st.markdown("---")
 
     # Equivalences (per day)
-    st.markdown("### What can it power (per day, more intuitive)")
+    st.markdown("### What can it power (per day)")
 
     e1, e2, e3 = st.columns(3)
     e1.metric("LED 10W (heures / jour)", fmt_num(led10w_hours_per_day, 2))
@@ -633,6 +650,8 @@ with tab_results:
     c2.metric("OPEX / an ($)", fmt_money(opex_year))
     c3.metric("Coût approx ($/kWh)", fmt_num(cost_per_kwh, 2) if np.isfinite(cost_per_kwh) else "∞")
 
+    st.caption("⚠️ Les coûts (CAPEX/OPEX) ne sont pas des constantes scientifiques : ils dépendent des devis/projets.")
+
     st.markdown("---")
 
     # Export
@@ -641,12 +660,10 @@ with tab_results:
         "place_type": inp["place_type"],
         "visitors_per_day": inp["visitors_per_day"],
         "peak_multiplier": inp["peak_multiplier"],
-        "avg_presence_hours": inp["avg_presence_hours"],
         "pct_on_zone": inp["pct_on_zone"],
         "useful_steps": inp["useful_steps"],
-        "J_per_step": inp["J_per_step"],
-        "efficiency": inp["efficiency"],
-        "storage_loss": inp["storage_loss"],
+        "J_net_per_step": inp["J_net_per_step"],
+        "auto_consumption_wh_day": inp["auto_consumption_wh_day"],
         "area_ft2": inp["area_ft2"],
         "tile_area_ft2": inp["tile_area_ft2"],
         "installed_cost_per_ft2": inp["installed_cost_per_ft2"],
@@ -654,9 +671,10 @@ with tab_results:
         "maintenance_pct": inp["maintenance_pct"],
         "amort_years": inp["amort_years"],
         "steps_captured_per_day": steps_captured,
-        "energy_Wh_day": energy_wh_day,
-        "energy_kWh_day": energy_kwh_day,
-        "energy_kWh_year": energy_kwh_year,
+        "gross_energy_Wh_day": gross_energy_wh_day,
+        "net_energy_Wh_day": net_energy_wh_day,
+        "net_energy_kWh_day": net_energy_kwh_day,
+        "net_energy_kWh_year": net_energy_kwh_year,
         "capex_$": capex,
         "opex_year_$": opex_year,
         "cost_per_kWh_$": cost_per_kwh,
@@ -675,59 +693,85 @@ with tab_results:
 
 
 # =========================
-# Methodology tab (anti-greenwashing clearer)
+# Methodology tab (anti-greenwashing + references)
 # =========================
 with tab_methods:
     st.subheader("Methodology / Limits (anti-greenwashing)")
 
-    st.markdown("### Key assumptions (orders of magnitude)")
-    st.markdown(
-        """
-- **Energy per step (J/step)**: typical order of magnitude **2–4 J/step** (varies by technology and conditions).
-- **Overall efficiency** (mechanical + conversion): often **0.3–0.6** (rough).
-- **Storage/conversion losses**: often **5–20%** depending on buffering and power electronics.
-- **Installed cost**: often **~75–160 $/ft²** as a rough range (real projects vary widely; some “showcase” installs can be much higher).
-"""
+    st.markdown("### Core formula (math-consistent)")
+    st.code(
+        "Net Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_net_per_step ÷ 3600  −  auto_consumption_Wh_day",
+        language="text"
     )
 
     st.markdown("### What this is NOT")
     st.markdown(
         """
 - ❌ **Not powering a building** (outputs are usually modest).
-- ❌ **Not a standalone climate solution** (main value is often educational + micro-local loads).
-- ❌ **Not a quote**: cost outputs are **rough ranges**, not vendor pricing.
-- ✅ **What it is**: a **decision-support** tool to avoid over-installation and to size for realistic use cases.
+- ❌ **Not a climate solution alone** (main value is often educational + micro-local loads).
+- ❌ **Not a quote**: CAPEX/OPEX numbers are **project-dependent** (vendor quotes/site constraints).
+- ✅ **What it is**: a **decision-support** tool to avoid over-installation and size for realistic micro-uses.
 """
     )
 
-    st.markdown("### Math (expand)")
-    with st.expander("Show formula"):
-        st.code(
-            "Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_per_step × efficiency × (1 - storage_loss) ÷ 3600",
-            language="text"
-        )
-        st.markdown(
-            """
-**Explanation:**  
-- `visitors/day × peak_multiplier` estimates typical + peak conditions  
-- `(%on_zone/100) × useful_steps` estimates how many “useful” steps are captured  
-- `J_per_step × efficiency × (1 - storage_loss)` converts steps into usable electrical energy  
-- dividing by `3600` converts Joules into Wh
+    st.markdown("### Why outputs are usually modest (anti-greenwashing framing)")
+    st.markdown(
+        """
+Even with optimistic footstep energy, the number of *captured useful steps* is the main limiter (placement + flow).
+At low daily energy, **auto-consumption** can dominate — which is why we expose it explicitly.
 """
-        )
+    )
 
-    st.markdown("### Why it’s “Sustainable AI”")
-    st.write(
-        "The forecast module is lightweight (trend + weekday seasonality). "
-        "Its purpose is to **avoid over-installation** (materials, cost, maintenance) by sizing to realistic demand. "
-        "No large models, no personal data."
+    st.markdown("### References (academic) & how they are used")
+    st.markdown(
+        """
+**Unit definitions & math consistency (J, W, Wh)**  
+- **BIPM – SI Brochure**: SI unit definitions (J, W, dimensional relations). Used to justify conversions and the division by **3600** (1 h = 3600 s).
+
+**Energy per footstep for kinetic floor tiles (core input: J_net/pas)**  
+- **Asadi et al. (2023)**: reports ~**511 mJ/step** (electromagnetic tile). Used as a realistic default anchor for **J_net/step**.  
+- **Jintanawan et al. (2020)**: prototype up to ~**702 mJ/step** (“Genpath”). Used as a realistic upper bound for strong prototypes.  
+- **Thainiramit et al. (2022)**: triboelectric tile with energy on the order of **mJ**. Used as a realistic lower bound and reminder that tech/load/frequency matter.
+
+**Why outputs are usually modest (anti-greenwashing framing)**  
+- **Paradiso & Starner (2005)**: classic energy scavenging review. Used to frame practical limitations and typical orders of magnitude.  
+- **Mitcheson et al. (2008)**: Proceedings of the IEEE review on motion energy harvesting. Used to contextualize variability and key factors (architecture, frequency, load).
+
+**Sanity checks for pedestrian motion (coherence warnings)**  
+- **Weidmann (1993)**: typical free walking speed (~**1.34 m/s**). Used for plausibility checks.  
+- **Pachi & Ji (2005)**: observed step frequency around ~**2 Hz** (in real environments). Used to derive typical step length (v/f) for warnings.
+
+**Power electronics (why we expose auto-consumption explicitly)**  
+- Academic MPPT/rectification examples for piezo/harvesting show conditioning is possible, but **system power budget** must be explicit — hence the auto-consumption field.
+"""
+    )
+
+    st.markdown("### Bibliographie (liens copiable)")
+    st.code(
+        """Asadi, M., Ahmadi, R., & Abazari, A. M. (2023). Footstep-powered floor tile: Design and evaluation of an electromagnetic frequency up-converted energy harvesting system enhanced by a cylindrical Halbach array. Sustainable Energy Technologies and Assessments, 60, 103571. https://doi.org/10.1016/j.seta.2023.103571
+
+Jintanawan, T., et al. (2020). Design of Kinetic-Energy Harvesting Floors. Energies, 13(20), 5419. https://www.mdpi.com/1996-1073/13/20/5419
+
+Thainiramit, P., et al. (2022). Triboelectric Energy-Harvesting Floor Tile. Materials, 15(24), 8853. https://www.mdpi.com/1996-1944/15/24/8853
+
+Paradiso, J. A., & Starner, T. (2005). Energy Scavenging for Mobile and Wireless Electronics. IEEE Pervasive Computing, 4(1), 18–27. https://doi.org/10.1109/MPRV.2005.9
+
+Mitcheson, P. D., Yeatman, E. M., Rao, G. K., Holmes, A. S., & Green, T. C. (2008). Energy Harvesting From Human and Machine Motion for Wireless Electronic Devices. Proceedings of the IEEE, 96(9), 1457–1486. https://doi.org/10.1109/JPROC.2008.927494
+
+Weidmann, U. (1993). Transporttechnik der Fussgänger. Institut für Verkehrsplanung, Transporttechnik, Strassen- und Eisenbahnbau (IVT), ETH Zürich. https://www.ped-net.org/uploads/media/weidmann-1993_01.pdf
+
+Pachi, A., & Ji, T. (2005). Frequency and velocity of people walking. The Structural Engineer, 83(3). https://trid.trb.org/View/750847
+
+BIPM. (2019). The International System of Units (SI Brochure, 9th ed.). https://www.bipm.org/en/publications/si-brochure""",
+        language="text"
     )
 
     st.markdown("### Limits / caveats")
     st.markdown(
         """
-- Results are sensitive to **% on zone** and **useful steps**: location + design matter most.
-- Real performance depends on device specs, surface compliance, user behavior, and power electronics.
-- Use outputs for **micro-loads** (LEDs, sensors, small displays) and **engagement/pedagogy**.
+- Results are sensitive to **% on zone** and **useful steps**: location + pathway design matter most.
+- **J_net/step** depends on technology, mechanical design, frequency, electrical load, and test conditions.
+- CAPEX/OPEX are **project-dependent** (quotes/site constraints), not “scientific constants”.
+- No personal data: use aggregated visitor counts only.
 """
     )
