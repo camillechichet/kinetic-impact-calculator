@@ -1,6 +1,5 @@
 import io
-import math
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -12,19 +11,12 @@ import streamlit as st
 # =========================
 
 def realism_badge(label: str, value: float, ok_range: tuple[float, float], warn_range: tuple[float, float]) -> str:
-    """
-    ok_range: (min,max) plausible
-    warn_range: (min,max) optimiste (en dehors => improbable)
-    """
+    """Return a small badge to signal plausibility."""
     if ok_range[0] <= value <= ok_range[1]:
         return f"✅ {label}: plausible"
     if warn_range[0] <= value <= warn_range[1]:
         return f"⚠️ {label}: optimiste"
     return f"🚩 {label}: très improbable"
-
-
-def clamp(x: float, lo: float, hi: float) -> float:
-    return max(lo, min(hi, x))
 
 
 def fmt_money(x: float) -> str:
@@ -40,9 +32,10 @@ def safe_div(a: float, b: float) -> float:
 
 
 def make_demo_visitors(n_days: int = 60, start: date | None = None) -> pd.DataFrame:
-    """Synthetic demo time series: weekday pattern + trend + noise."""
+    """Synthetic demo series with weekday pattern + trend + noise."""
     if start is None:
         start = date.today() - timedelta(days=n_days)
+
     dates = pd.date_range(start=start, periods=n_days, freq="D")
     base = 1200
     trend = np.linspace(0, 250, n_days)
@@ -67,13 +60,11 @@ def load_csv_visitors(file) -> pd.DataFrame:
 def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFrame:
     """
     Lightweight forecast WITHOUT sklearn:
-    - trend: linear fit (numpy polyfit on ordinal dates)
+    - trend: linear fit (numpy polyfit)
     - seasonality: weekday mean residual adjustment
     """
-    d = df.copy()
-    d = d.dropna()
+    d = df.copy().dropna()
     if len(d) < 7:
-        # too small: fallback to mean
         last = int(d["visitors"].tail(7).mean()) if len(d) > 0 else 0
         start_date = (d["date"].max() + timedelta(days=1)) if len(d) > 0 else date.today()
         future_dates = [start_date + timedelta(days=i) for i in range(horizon_days)]
@@ -82,13 +73,11 @@ def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFra
     x = np.array([pd.Timestamp(dt).toordinal() for dt in d["date"]], dtype=float)
     y = d["visitors"].to_numpy(dtype=float)
 
-    # Trend
-    coeff = np.polyfit(x, y, 1)  # degree 1
+    coeff = np.polyfit(x, y, 1)
     trend_fn = np.poly1d(coeff)
     y_trend = trend_fn(x)
     resid = y - y_trend
 
-    # Weekday adjustment
     wday = np.array([pd.Timestamp(dt).weekday() for dt in d["date"]], dtype=int)
     resid_by_wday = {}
     for wd in range(7):
@@ -107,7 +96,7 @@ def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFra
 
 
 # =========================
-# Presets (Capstone-friendly)
+# Presets
 # =========================
 
 PRESETS = {
@@ -161,10 +150,10 @@ st.caption(
 with st.expander("Quick start (1 minute)"):
     st.markdown(
         """
-1) Choisis un **type de lieu** puis clique **Appliquer preset** (tu peux modifier ensuite).  
-2) Ajuste **% sur zone** et **pas utiles** (regarde les badges ✅⚠️🚩).  
-3) Va sur **Results** pour obtenir **kWh + usages concrets + coûts + Go/No-Go**.  
-4) Option : ajoute un CSV (**date, visitors**) pour la **prévision** (IA légère).
+1) Choisis un **type de lieu** puis clique **Appliquer preset**.  
+2) Ajuste **% sur zone** et **pas utiles** (badges ✅⚠️🚩).  
+3) Va sur **Results** pour voir **Executive summary + 2 verdicts**.  
+4) Option : CSV (**date, visitors**) pour la **prévision** (IA légère).
 """
     )
 
@@ -173,27 +162,21 @@ with st.expander("Quick start (1 minute)"):
 # =========================
 
 DEFAULTS = {
-    # Context
     "place_type": "Musée",
     "visitors_per_day": 3300,
     "peak_multiplier": 1.0,
     "avg_presence_hours": 2.5,
-    # Flow on zone
     "pct_on_zone": 12.0,
     "useful_steps": 115.0,
-    # Technical
     "J_per_step": 3.0,
     "efficiency": 0.50,
     "storage_loss": 0.10,
-    # Sizing
     "area_ft2": 190.0,
     "tile_area_ft2": 1.10,
-    # Costs
     "installed_cost_per_ft2": 175.0,
     "fixed_cost": 20000.0,
     "maintenance_pct": 8.0,
     "amort_years": 9,
-    # Forecast
     "forecast_horizon_days": 14,
     "use_demo_dataset": True,
 }
@@ -201,24 +184,18 @@ DEFAULTS = {
 if "inputs" not in st.session_state:
     st.session_state.inputs = DEFAULTS.copy()
 else:
-    # ensure any missing keys are backfilled
     for k, v in DEFAULTS.items():
         st.session_state.inputs.setdefault(k, v)
-
-# =========================
-# Tabs
-# =========================
 
 tab_inputs, tab_results, tab_methods = st.tabs(["Inputs", "Results", "Methodology / Limits"])
 
 
 # =========================
-# Inputs tab
+# Inputs
 # =========================
 with tab_inputs:
     c1, c2, c3 = st.columns([1.1, 1.0, 1.0], gap="large")
 
-    # ---- Column 1: Context + Flow
     with c1:
         st.subheader("Context")
 
@@ -229,8 +206,7 @@ with tab_inputs:
             if st.session_state.inputs["place_type"] in PRESETS else 0
         )
 
-        apply_preset = st.button("Appliquer preset du lieu")
-        if apply_preset:
+        if st.button("Appliquer preset du lieu"):
             p = PRESETS.get(place_type, {})
             for k, v in p.items():
                 st.session_state.inputs[k] = v
@@ -280,7 +256,6 @@ with tab_inputs:
         st.caption("Ex: 20–60 (petit couloir) / 80–200 (long passage)")
         st.write(realism_badge("Pas utiles", useful_steps, ok_range=(20, 200), warn_range=(5, 300)))
 
-    # ---- Column 2: Technical + sizing
     with c2:
         st.subheader("Technical assumptions")
 
@@ -327,7 +302,6 @@ with tab_inputs:
         est_tiles = int(round(area_ft2 / tile_area_ft2))
         st.info(f"Estimation: ~ **{est_tiles} dalles** pour {fmt_num(area_ft2,0)} ft² (si 1 dalle ≈ {fmt_num(tile_area_ft2,2)} ft²).")
 
-    # ---- Column 3: Costs + Sustainable AI
     with c3:
         st.subheader("Costs")
 
@@ -363,9 +337,9 @@ with tab_inputs:
         uploaded = st.file_uploader("Upload CSV (colonnes: date, visitors)", type=["csv"])
         horizon = st.slider("Horizon de prévision (jours)", 7, 60, int(st.session_state.inputs["forecast_horizon_days"]), 1)
 
-        st.caption("L’IA est volontairement frugale (pas de gros modèle) : trend + saisonnalité (jours de semaine).")
+        st.caption("IA frugale : trend + saisonnalité (jours de semaine).")
 
-        # store inputs
+        # Store all inputs
         st.session_state.inputs.update({
             "visitors_per_day": int(visitors_per_day),
             "peak_multiplier": float(peak_multiplier),
@@ -385,7 +359,7 @@ with tab_inputs:
             "forecast_horizon_days": int(horizon),
         })
 
-        # preview forecast data (optional)
+        # Optional forecast preview
         df_hist = None
         if uploaded is not None:
             try:
@@ -400,10 +374,10 @@ with tab_inputs:
             st.write("Aperçu dataset:")
             st.dataframe(df_hist.tail(10), use_container_width=True)
 
-            # Forecast
             df_fc = lightweight_forecast(df_hist, horizon_days=horizon)
             st.write("Prévision (IA légère):")
             st.dataframe(df_fc.head(10), use_container_width=True)
+
             chart_df = pd.concat(
                 [
                     df_hist.rename(columns={"visitors": "value"}).assign(kind="history")[["date", "value", "kind"]],
@@ -414,16 +388,14 @@ with tab_inputs:
             chart_df["date"] = pd.to_datetime(chart_df["date"])
             st.line_chart(chart_df.set_index("date")[["value"]])
 
-            st.info("Astuce capstone: tu peux dire que l’objectif est d’éviter la sur-installation (matériaux/maintenance) via scénarios + prévision IA.")
+            st.info("Astuce capstone: l’objectif = éviter la sur-installation (matériaux/maintenance) via scénarios + prévision IA.")
 
 
 # =========================
-# Compute core outputs (shared)
+# Compute shared results
 # =========================
-
 inp = st.session_state.inputs
 
-# Captured steps/day
 steps_captured = (
     inp["visitors_per_day"]
     * inp["peak_multiplier"]
@@ -431,7 +403,6 @@ steps_captured = (
     * inp["useful_steps"]
 )
 
-# Energy Wh/day: J -> Wh by /3600
 energy_wh_day = steps_captured * inp["J_per_step"] * inp["efficiency"] * (1.0 - inp["storage_loss"]) / 3600.0
 energy_kwh_day = energy_wh_day / 1000.0
 energy_kwh_month = energy_kwh_day * 30.0
@@ -444,65 +415,143 @@ N = inp["amort_years"]
 total_cost_N = capex + opex_year * N
 cost_per_kwh = safe_div(total_cost_N, energy_kwh_year * N) if energy_kwh_year > 0 else float("inf")
 
-# Equivalences (pedagogical, local)
-led10w_hours = safe_div(energy_wh_day, 10.0)  # 10W LED -> Wh / 10W = hours
-phone_charges = safe_div(energy_wh_day, 12.0)  # ~12Wh
-sensor1w_days = safe_div(energy_wh_day, 24.0)  # 1W continuous -> 24Wh/day => days
-
-# Uncertainty scenarios (simple)
-scenarios = {
-    "low": 0.6,
-    "mid": 1.0,
-    "high": 1.4,
-}
+# Uncertainty scenarios
+scenarios = {"low": 0.6, "mid": 1.0, "high": 1.4}
 rows = []
 for name, mult in scenarios.items():
     wh = energy_wh_day * mult
     rows.append({"scenario": name, "Wh/day": wh, "kWh/day": wh / 1000.0})
 df_scen = pd.DataFrame(rows)
 
-# Verdict logic (pedagogical & honest)
-verdict = "NO-GO (energy ROI) — Energy output is very small; consider it primarily an engagement / educational installation."
-if energy_wh_day >= 200 and cost_per_kwh < 2.0:
-    verdict = "GO — Reasonable for a local use-case (LEDs/sensors) + engagement."
-elif energy_wh_day >= 200:
-    verdict = "NO-GO (energy ROI) — Energy is decent for local loads, but cost/kWh is high; best framed as pedagogy/engagement."
+# =========================
+# Equivalences (MORE PEDAGOGICAL, per day)
+# =========================
+
+# LED 10W
+led10w_hours_per_day = safe_div(energy_wh_day, 10.0)
+
+# Phone charges (12Wh)
+phone_charges_per_day = safe_div(energy_wh_day, 12.0)
+
+# Sensor 1W continuous => 24 Wh/day
+sensor1w_days_per_day = safe_div(energy_wh_day, 24.0)  # days of sensor powered by 1 day harvest
+sensor1w_hours_per_day = sensor1w_days_per_day * 24.0
+
+# E-ink small sign (example): assume 2Wh/day
+eink_sign_days_per_day = safe_div(energy_wh_day, 2.0)
+
+# CO2 sensor node (example): assume 5Wh/day
+co2_sensor_days_per_day = safe_div(energy_wh_day, 5.0)
+
+# Projector: assume 200W => Wh / 200W = hours => minutes
+projector_minutes_per_day = safe_div(energy_wh_day, 200.0) * 60.0
 
 # =========================
-# Results tab
+# Verdicts (split into 2)
+# =========================
+
+# 1) Energy ROI verdict
+roi_verdict = "NO-GO (ROI énergie) — coût/kWh très élevé vs production."
+if energy_kwh_year >= 200 and np.isfinite(cost_per_kwh) and cost_per_kwh <= 0.5:
+    roi_verdict = "GO (ROI énergie) — rare, mais ici ça devient comparativement intéressant."
+elif energy_kwh_year >= 50 and np.isfinite(cost_per_kwh) and cost_per_kwh <= 2.0:
+    roi_verdict = "MIXTE (ROI énergie) — jouable pour micro-usages, mais coût/kWh reste élevé."
+
+# 2) Pedagogy / engagement verdict
+pedago_verdict = "GO (pédagogie/engagement) — impact principal = rendre l’énergie tangible + vitrine durable."
+if inp["pct_on_zone"] < 1.0 or inp["useful_steps"] < 10:
+    pedago_verdict = "MIXTE (pédagogie/engagement) — zone trop peu traversée : revoir l’emplacement / surface."
+
+# One-liner summary for actionability
+key_driver = "La réalité dépend surtout de **% sur zone** et **pas utiles** (emplacement + design du parcours)."
+
+
+# =========================
+# Results tab (VISUAL + ACTIONABLE)
 # =========================
 with tab_results:
-    st.subheader("Results (energy + uncertainty + costs + Go/No-Go)")
+    st.subheader("Results (visual + actionable)")
 
+    # --- Executive summary (top)
+    with st.container(border=True):
+        st.markdown("### Executive summary (résumé décisionnel)")
+
+        # Energy label
+        energy_label = f"{fmt_num(energy_kwh_year, 1)} kWh/an"
+        if energy_kwh_year < 10:
+            energy_label += " (très faible)"
+        elif energy_kwh_year < 100:
+            energy_label += " (modeste)"
+
+        usage_realiste = "LEDs / capteurs / écran pédagogique (micro-usages locaux)"
+
+        st.write(f"**Énergie estimée** : {energy_label}")
+        st.write(f"**Usage réaliste** : {usage_realiste}")
+        st.write(f"**Coût total** : {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/an OPEX → ~ **{fmt_num(cost_per_kwh, 2)} $/kWh**")
+        st.write(f"**Verdict ROI énergie** : {roi_verdict}")
+        st.write(f"**Verdict pédagogie / vitrine** : {pedago_verdict}")
+        st.info(key_driver)
+
+    st.markdown("---")
+
+    # --- Metrics row
     m1, m2, m3 = st.columns(3)
     m1.metric("kWh / jour", fmt_num(energy_kwh_day, 3))
     m2.metric("kWh / mois (~30j)", fmt_num(energy_kwh_month, 2))
     m3.metric("kWh / an (~365j)", fmt_num(energy_kwh_year, 1))
 
-    st.markdown("### Uncertainty scenarios (Wh/day)")
-    st.dataframe(df_scen, use_container_width=True)
+    # --- Scenarios: GRAPH instead of table
+    st.markdown("### Uncertainty scenarios (visual)")
+    scen_plot = df_scen.copy()
+    scen_plot["scenario"] = pd.Categorical(scen_plot["scenario"], categories=["low", "mid", "high"], ordered=True)
+    scen_plot = scen_plot.sort_values("scenario").set_index("scenario")[["Wh/day"]]
+    st.bar_chart(scen_plot)
 
-    st.markdown("### What can it power (pedagogical, local uses)")
+    st.caption("🧠 Interprétation : l’incertitude vient surtout de **% sur zone** et **pas utiles** (où tu places la zone + design du passage).")
+
+    st.markdown("---")
+
+    # --- Equivalences (more "speaking", per day)
+    st.markdown("### What can it power (more intuitive, per day)")
+
     e1, e2, e3 = st.columns(3)
-    e1.metric("LED 10W (heures)", fmt_num(led10w_hours, 1))
-    e2.metric("Charges téléphone (~12Wh)", fmt_num(phone_charges, 1))
-    e3.metric("Capteur 1W (jours)", fmt_num(sensor1w_days, 2))
+    e1.metric("LED 10W (heures / jour)", fmt_num(led10w_hours_per_day, 2))
+    e2.metric("Charges téléphone (~12Wh) / jour", fmt_num(phone_charges_per_day, 2))
+    e3.metric("Capteur 1W (heures / jour)", fmt_num(sensor1w_hours_per_day, 2))
+
+    e4, e5, e6 = st.columns(3)
+    e4.metric("Petit panneau e-ink (2Wh/j) : jours", fmt_num(eink_sign_days_per_day, 2))
+    e5.metric("Capteur CO₂ (5Wh/j) : jours", fmt_num(co2_sensor_days_per_day, 2))
+    e6.metric("Projecteur (200W) : minutes / jour", fmt_num(projector_minutes_per_day, 2))
 
     st.info(
-        "Important: kinetic floors usually generate modest energy. The main value is often engagement + pedagogy "
-        "(making energy visible), plus powering small local loads (LEDs, sensors, small displays)."
+        "Important : l’énergie récupérée est généralement **modeste**. "
+        "La valeur forte est souvent **pédagogique/engagement** (comme Coldplay : rendre l’énergie tangible), "
+        "plus des **micro-usages locaux** (LEDs, capteurs, petit affichage)."
     )
 
+    st.markdown("---")
+
+    # --- Costs
     st.markdown("### Costs (CAPEX/OPEX) + cost per kWh (rough)")
     c1, c2, c3 = st.columns(3)
     c1.metric("CAPEX ($)", fmt_money(capex))
     c2.metric("OPEX / an ($)", fmt_money(opex_year))
     c3.metric("Coût approx ($/kWh)", fmt_num(cost_per_kwh, 2) if np.isfinite(cost_per_kwh) else "∞")
 
-    st.markdown("### Verdict")
-    st.warning(verdict)
+    st.markdown("---")
 
-    # Export results
+    # --- Verdict section (split)
+    st.markdown("### Verdicts (split: ROI vs pedagogy)")
+    v1, v2 = st.columns(2)
+    with v1:
+        st.warning(roi_verdict)
+        st.caption("Conseil : si tu veux améliorer le ROI, le levier #1 = **augmenter l’usage sur zone** (emplacement / parcours) sans exploser la surface.")
+    with v2:
+        st.success(pedago_verdict)
+        st.caption("Conseil : pour maximiser la valeur pédagogique, ajoute un **affichage** “Tu viens de produire X Wh” + une jauge “objectif LED/capteur/écran”.")
+
+    # --- Export
     st.markdown("### Export")
     export = {
         "place_type": inp["place_type"],
@@ -527,7 +576,8 @@ with tab_results:
         "capex_$": capex,
         "opex_year_$": opex_year,
         "cost_per_kWh_$": cost_per_kwh,
-        "verdict": verdict,
+        "roi_verdict": roi_verdict,
+        "pedago_verdict": pedago_verdict,
     }
     out_df = pd.DataFrame([export])
     buf = io.StringIO()
@@ -562,7 +612,7 @@ with tab_methods:
     st.markdown(
         """
 - Energy outputs are usually modest; strongest benefit is often engagement/pedagogy + powering small local loads.
-- Costs vary by vendor, site constraints, and “showcase” projects. Treat cost outputs as ranges, not quotes.
+- Costs vary by vendor and site constraints. Treat cost outputs as ranges, not quotes.
 - No personal data: use aggregated visitor counts only.
 """
     )
