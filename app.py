@@ -11,12 +11,26 @@ import streamlit as st
 # =========================
 
 def realism_badge(label: str, value: float, ok_range: tuple[float, float], warn_range: tuple[float, float]) -> str:
-    """Return a small badge to signal plausibility."""
     if ok_range[0] <= value <= ok_range[1]:
         return f"✅ {label}: plausible"
     if warn_range[0] <= value <= warn_range[1]:
         return f"⚠️ {label}: optimiste"
     return f"🚩 {label}: très improbable"
+
+
+def verdict_badge(kind: str, reason: str) -> tuple[str, str]:
+    """
+    Returns (badge_text, streamlit_kind) where streamlit_kind is one of:
+    "success", "warning", "error", "info"
+    """
+    k = kind.upper().strip()
+    if k == "GO":
+        return (f"✅ GO — {reason}", "success")
+    if k == "MIXED":
+        return (f"⚠️ MIXTE — {reason}", "warning")
+    if k == "NO-GO":
+        return (f"⛔ NO-GO — {reason}", "error")
+    return (f"ℹ️ {kind} — {reason}", "info")
 
 
 def fmt_money(x: float) -> str:
@@ -32,7 +46,6 @@ def safe_div(a: float, b: float) -> float:
 
 
 def make_demo_visitors(n_days: int = 60, start: date | None = None) -> pd.DataFrame:
-    """Synthetic demo series with weekday pattern + trend + noise."""
     if start is None:
         start = date.today() - timedelta(days=n_days)
 
@@ -96,7 +109,7 @@ def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFra
 
 
 # =========================
-# Presets
+# Presets (and example scenarios)
 # =========================
 
 PRESETS = {
@@ -107,6 +120,8 @@ PRESETS = {
         "avg_presence_hours": 2.0,
         "area_ft2": 120.0,
         "visitors_per_day": 1200,
+        "installed_cost_per_ft2": 140.0,
+        "fixed_cost": 12000.0,
     },
     "Gare": {
         "pct_on_zone": 18.0,
@@ -115,6 +130,8 @@ PRESETS = {
         "avg_presence_hours": 0.75,
         "area_ft2": 220.0,
         "visitors_per_day": 8000,
+        "installed_cost_per_ft2": 160.0,
+        "fixed_cost": 25000.0,
     },
     "Stade": {
         "pct_on_zone": 12.0,
@@ -123,6 +140,8 @@ PRESETS = {
         "avg_presence_hours": 3.0,
         "area_ft2": 300.0,
         "visitors_per_day": 25000,
+        "installed_cost_per_ft2": 180.0,
+        "fixed_cost": 40000.0,
     },
     "Centre commercial": {
         "pct_on_zone": 10.0,
@@ -131,6 +150,59 @@ PRESETS = {
         "avg_presence_hours": 1.5,
         "area_ft2": 180.0,
         "visitors_per_day": 6000,
+        "installed_cost_per_ft2": 150.0,
+        "fixed_cost": 20000.0,
+    },
+}
+
+EXAMPLE_SCENARIOS = {
+    "Musée (réaliste)": {
+        "place_type": "Musée",
+        "visitors_per_day": 1500,
+        "pct_on_zone": 8.0,
+        "useful_steps": 60.0,
+        "J_per_step": 3.0,
+        "efficiency": 0.5,
+        "storage_loss": 0.10,
+        "area_ft2": 120.0,
+        "installed_cost_per_ft2": 140.0,
+        "fixed_cost": 12000.0,
+        "maintenance_pct": 6.0,
+        "amort_years": 8,
+        "peak_multiplier": 1.2,
+        "avg_presence_hours": 2.0,
+    },
+    "Gare (réaliste)": {
+        "place_type": "Gare",
+        "visitors_per_day": 12000,
+        "pct_on_zone": 18.0,
+        "useful_steps": 120.0,
+        "J_per_step": 3.0,
+        "efficiency": 0.5,
+        "storage_loss": 0.10,
+        "area_ft2": 220.0,
+        "installed_cost_per_ft2": 160.0,
+        "fixed_cost": 25000.0,
+        "maintenance_pct": 8.0,
+        "amort_years": 10,
+        "peak_multiplier": 1.5,
+        "avg_presence_hours": 0.75,
+    },
+    "Stade (événement)": {
+        "place_type": "Stade",
+        "visitors_per_day": 35000,
+        "pct_on_zone": 12.0,
+        "useful_steps": 80.0,
+        "J_per_step": 3.0,
+        "efficiency": 0.5,
+        "storage_loss": 0.10,
+        "area_ft2": 300.0,
+        "installed_cost_per_ft2": 180.0,
+        "fixed_cost": 40000.0,
+        "maintenance_pct": 8.0,
+        "amort_years": 10,
+        "peak_multiplier": 2.5,
+        "avg_presence_hours": 3.0,
     },
 }
 
@@ -141,21 +213,11 @@ PRESETS = {
 
 st.set_page_config(page_title="Kinetic Impact Calculator", page_icon="⚡", layout="wide")
 
-st.title("Kinetic Impact Calculator (inspired by Coldplay)")
+st.title("Kinetic Impact Calculator")
 st.caption(
     "Decision-support MVP: estimate kinetic floor energy, practical uses, costs (CAPEX/OPEX), "
     "uncertainty scenarios, and a lightweight forecast module (Sustainable AI)."
 )
-
-with st.expander("Quick start (1 minute)"):
-    st.markdown(
-        """
-1) Choisis un **type de lieu** puis clique **Appliquer preset**.  
-2) Ajuste **% sur zone** et **pas utiles** (badges ✅⚠️🚩).  
-3) Va sur **Results** pour voir **Executive summary + 2 verdicts**.  
-4) Option : CSV (**date, visitors**) pour la **prévision** (IA légère).
-"""
-    )
 
 # =========================
 # Session state defaults
@@ -186,6 +248,36 @@ if "inputs" not in st.session_state:
 else:
     for k, v in DEFAULTS.items():
         st.session_state.inputs.setdefault(k, v)
+
+# =========================
+# Top UI buttons (small details that help)
+# =========================
+top_l, top_m, top_r = st.columns([1.2, 1.2, 1.6])
+with top_l:
+    if st.button("🔄 Reset to defaults"):
+        st.session_state.inputs = DEFAULTS.copy()
+        st.success("Defaults rechargés.")
+        st.rerun()
+
+with top_m:
+    scenario_name = st.selectbox("Load example scenario", list(EXAMPLE_SCENARIOS.keys()))
+    if st.button("📌 Charger scénario exemple"):
+        ex = EXAMPLE_SCENARIOS[scenario_name]
+        for k, v in ex.items():
+            st.session_state.inputs[k] = v
+        st.success(f"Scénario chargé: {scenario_name}")
+        st.rerun()
+
+with top_r:
+    with st.expander("Quick start (1 minute)"):
+        st.markdown(
+            """
+1) Choisis un **type de lieu** puis clique **Appliquer preset** (ou charge un scénario).  
+2) Ajuste **% sur zone** et **pas utiles** (badges ✅⚠️🚩).  
+3) Va sur **Results** pour voir **Executive summary + 2 verdicts**.  
+4) Option : CSV (**date, visitors**) pour la **prévision** (IA légère).
+"""
+        )
 
 tab_inputs, tab_results, tab_methods = st.tabs(["Inputs", "Results", "Methodology / Limits"])
 
@@ -263,7 +355,7 @@ with tab_inputs:
             "Énergie par pas (J)",
             1.0, 6.0, float(st.session_state.inputs["J_per_step"]), 0.1
         )
-        st.caption("Ordre de grandeur: 2–4 J/pas (souvent cité).")
+        st.caption("Ordre de grandeur: 2–4 J/pas (typique, souvent cité).")
         st.write(realism_badge("J/pas", J_per_step, ok_range=(2.0, 4.0), warn_range=(1.0, 6.0)))
 
         efficiency = st.slider(
@@ -388,7 +480,7 @@ with tab_inputs:
             chart_df["date"] = pd.to_datetime(chart_df["date"])
             st.line_chart(chart_df.set_index("date")[["value"]])
 
-            st.info("Astuce capstone: l’objectif = éviter la sur-installation (matériaux/maintenance) via scénarios + prévision IA.")
+            st.info("Astuce capstone : objectif = éviter la sur-installation (matériaux/maintenance) via scénarios + prévision IA.")
 
 
 # =========================
@@ -405,6 +497,9 @@ steps_captured = (
 
 energy_wh_day = steps_captured * inp["J_per_step"] * inp["efficiency"] * (1.0 - inp["storage_loss"]) / 3600.0
 energy_kwh_day = energy_wh_day / 1000.0
+
+# Always show both units, consistent order: Wh/day then kWh/day then kWh/year
+energy_wh_year = energy_wh_day * 365.0
 energy_kwh_month = energy_kwh_day * 30.0
 energy_kwh_year = energy_kwh_day * 365.0
 
@@ -423,56 +518,39 @@ for name, mult in scenarios.items():
     rows.append({"scenario": name, "Wh/day": wh, "kWh/day": wh / 1000.0})
 df_scen = pd.DataFrame(rows)
 
-# =========================
-# Equivalences (MORE PEDAGOGICAL, per day)
-# =========================
-
-# LED 10W
+# Equivalences (per day)
 led10w_hours_per_day = safe_div(energy_wh_day, 10.0)
-
-# Phone charges (12Wh)
 phone_charges_per_day = safe_div(energy_wh_day, 12.0)
+sensor1w_hours_per_day = safe_div(energy_wh_day, 1.0)  # 1W for 1 hour = 1Wh
+eink_sign_days_per_day = safe_div(energy_wh_day, 2.0)   # example: 2Wh/day
+co2_sensor_days_per_day = safe_div(energy_wh_day, 5.0)  # example: 5Wh/day
+projector_minutes_per_day = safe_div(energy_wh_day, 200.0) * 60.0  # 200W projector
 
-# Sensor 1W continuous => 24 Wh/day
-sensor1w_days_per_day = safe_div(energy_wh_day, 24.0)  # days of sensor powered by 1 day harvest
-sensor1w_hours_per_day = sensor1w_days_per_day * 24.0
+# Verdicts (split in 2) + reason
+# ROI energy
+if energy_kwh_year <= 0:
+    roi_kind, roi_reason = "NO-GO", "énergie estimée ~0 (vérifie % sur zone / pas utiles)."
+elif np.isfinite(cost_per_kwh) and cost_per_kwh < 5 and energy_kwh_year > 300:
+    roi_kind, roi_reason = "MIXED", "ROI devient moins extrême, mais reste rarement compétitif vs réseau."
+else:
+    roi_kind, roi_reason = "NO-GO", "coût/kWh très élevé vs production (énergie récupérée généralement modeste)."
 
-# E-ink small sign (example): assume 2Wh/day
-eink_sign_days_per_day = safe_div(energy_wh_day, 2.0)
-
-# CO2 sensor node (example): assume 5Wh/day
-co2_sensor_days_per_day = safe_div(energy_wh_day, 5.0)
-
-# Projector: assume 200W => Wh / 200W = hours => minutes
-projector_minutes_per_day = safe_div(energy_wh_day, 200.0) * 60.0
-
-# =========================
-# Verdicts (split into 2)
-# =========================
-
-# 1) Energy ROI verdict
-roi_verdict = "NO-GO (ROI énergie) — coût/kWh très élevé vs production."
-if energy_kwh_year >= 200 and np.isfinite(cost_per_kwh) and cost_per_kwh <= 0.5:
-    roi_verdict = "GO (ROI énergie) — rare, mais ici ça devient comparativement intéressant."
-elif energy_kwh_year >= 50 and np.isfinite(cost_per_kwh) and cost_per_kwh <= 2.0:
-    roi_verdict = "MIXTE (ROI énergie) — jouable pour micro-usages, mais coût/kWh reste élevé."
-
-# 2) Pedagogy / engagement verdict
-pedago_verdict = "GO (pédagogie/engagement) — impact principal = rendre l’énergie tangible + vitrine durable."
+# Pedagogy / engagement
 if inp["pct_on_zone"] < 1.0 or inp["useful_steps"] < 10:
-    pedago_verdict = "MIXTE (pédagogie/engagement) — zone trop peu traversée : revoir l’emplacement / surface."
+    ped_kind, ped_reason = "MIXED", "zone trop peu traversée → revoir emplacement ou surface."
+else:
+    ped_kind, ped_reason = "GO", "forte valeur d’engagement : rendre l’énergie tangible + micro-usages locaux."
 
-# One-liner summary for actionability
 key_driver = "La réalité dépend surtout de **% sur zone** et **pas utiles** (emplacement + design du parcours)."
 
 
 # =========================
-# Results tab (VISUAL + ACTIONABLE)
+# Results tab
 # =========================
 with tab_results:
     st.subheader("Results (visual + actionable)")
 
-    # --- Executive summary (top)
+    # Executive summary (top)
     with st.container(border=True):
         st.markdown("### Executive summary (résumé décisionnel)")
 
@@ -483,36 +561,52 @@ with tab_results:
         elif energy_kwh_year < 100:
             energy_label += " (modeste)"
 
-        usage_realiste = "LEDs / capteurs / écran pédagogique (micro-usages locaux)"
+        usage_realiste = "LEDs / capteurs / petit affichage (micro-usages locaux)"
 
         st.write(f"**Énergie estimée** : {energy_label}")
         st.write(f"**Usage réaliste** : {usage_realiste}")
         st.write(f"**Coût total** : {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/an OPEX → ~ **{fmt_num(cost_per_kwh, 2)} $/kWh**")
-        st.write(f"**Verdict ROI énergie** : {roi_verdict}")
-        st.write(f"**Verdict pédagogie / vitrine** : {pedago_verdict}")
+
+        roi_text, roi_style = verdict_badge(roi_kind, roi_reason)
+        ped_text, ped_style = verdict_badge(ped_kind, ped_reason)
+
+        if roi_style == "success":
+            st.success(roi_text)
+        elif roi_style == "warning":
+            st.warning(roi_text)
+        else:
+            st.error(roi_text)
+
+        if ped_style == "success":
+            st.success(ped_text)
+        elif ped_style == "warning":
+            st.warning(ped_text)
+        else:
+            st.info(ped_text)
+
         st.info(key_driver)
 
     st.markdown("---")
 
-    # --- Metrics row
-    m1, m2, m3 = st.columns(3)
-    m1.metric("kWh / jour", fmt_num(energy_kwh_day, 3))
-    m2.metric("kWh / mois (~30j)", fmt_num(energy_kwh_month, 2))
-    m3.metric("kWh / an (~365j)", fmt_num(energy_kwh_year, 1))
+    # Metrics: consistent units order
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Wh / jour", fmt_num(energy_wh_day, 2))
+    m2.metric("kWh / jour", fmt_num(energy_kwh_day, 4))
+    m3.metric("kWh / mois (~30j)", fmt_num(energy_kwh_month, 2))
+    m4.metric("kWh / an (~365j)", fmt_num(energy_kwh_year, 1))
 
-    # --- Scenarios: GRAPH instead of table
+    # Scenarios chart
     st.markdown("### Uncertainty scenarios (visual)")
     scen_plot = df_scen.copy()
     scen_plot["scenario"] = pd.Categorical(scen_plot["scenario"], categories=["low", "mid", "high"], ordered=True)
     scen_plot = scen_plot.sort_values("scenario").set_index("scenario")[["Wh/day"]]
     st.bar_chart(scen_plot)
-
-    st.caption("🧠 Interprétation : l’incertitude vient surtout de **% sur zone** et **pas utiles** (où tu places la zone + design du passage).")
+    st.caption("🧠 Interprétation : l’incertitude vient surtout de **% sur zone** et **pas utiles**.")
 
     st.markdown("---")
 
-    # --- Equivalences (more "speaking", per day)
-    st.markdown("### What can it power (more intuitive, per day)")
+    # Equivalences (per day)
+    st.markdown("### What can it power (per day, more intuitive)")
 
     e1, e2, e3 = st.columns(3)
     e1.metric("LED 10W (heures / jour)", fmt_num(led10w_hours_per_day, 2))
@@ -526,13 +620,13 @@ with tab_results:
 
     st.info(
         "Important : l’énergie récupérée est généralement **modeste**. "
-        "La valeur forte est souvent **pédagogique/engagement** (comme Coldplay : rendre l’énergie tangible), "
+        "La valeur forte est souvent **pédagogique/engagement** (rendre l’énergie tangible), "
         "plus des **micro-usages locaux** (LEDs, capteurs, petit affichage)."
     )
 
     st.markdown("---")
 
-    # --- Costs
+    # Costs
     st.markdown("### Costs (CAPEX/OPEX) + cost per kWh (rough)")
     c1, c2, c3 = st.columns(3)
     c1.metric("CAPEX ($)", fmt_money(capex))
@@ -541,17 +635,7 @@ with tab_results:
 
     st.markdown("---")
 
-    # --- Verdict section (split)
-    st.markdown("### Verdicts (split: ROI vs pedagogy)")
-    v1, v2 = st.columns(2)
-    with v1:
-        st.warning(roi_verdict)
-        st.caption("Conseil : si tu veux améliorer le ROI, le levier #1 = **augmenter l’usage sur zone** (emplacement / parcours) sans exploser la surface.")
-    with v2:
-        st.success(pedago_verdict)
-        st.caption("Conseil : pour maximiser la valeur pédagogique, ajoute un **affichage** “Tu viens de produire X Wh” + une jauge “objectif LED/capteur/écran”.")
-
-    # --- Export
+    # Export
     st.markdown("### Export")
     export = {
         "place_type": inp["place_type"],
@@ -576,8 +660,8 @@ with tab_results:
         "capex_$": capex,
         "opex_year_$": opex_year,
         "cost_per_kWh_$": cost_per_kwh,
-        "roi_verdict": roi_verdict,
-        "pedago_verdict": pedago_verdict,
+        "roi_verdict": f"{roi_kind}: {roi_reason}",
+        "pedago_verdict": f"{ped_kind}: {ped_reason}",
     }
     out_df = pd.DataFrame([export])
     buf = io.StringIO()
@@ -591,28 +675,59 @@ with tab_results:
 
 
 # =========================
-# Methodology tab
+# Methodology tab (anti-greenwashing clearer)
 # =========================
 with tab_methods:
     st.subheader("Methodology / Limits (anti-greenwashing)")
 
-    st.markdown("**Core formula (transparent):**")
-    st.code(
-        "Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_per_step × efficiency × (1 - storage_loss) ÷ 3600",
-        language="text"
-    )
-
-    st.markdown("**Why it’s “Sustainable AI”:**")
-    st.write(
-        "The forecast is lightweight (no large models). It helps avoid over-installation (materials, costs, maintenance) "
-        "by sizing to realistic demand."
-    )
-
-    st.markdown("**Limits:**")
+    st.markdown("### Key assumptions (orders of magnitude)")
     st.markdown(
         """
-- Energy outputs are usually modest; strongest benefit is often engagement/pedagogy + powering small local loads.
-- Costs vary by vendor and site constraints. Treat cost outputs as ranges, not quotes.
-- No personal data: use aggregated visitor counts only.
+- **Energy per step (J/step)**: typical order of magnitude **2–4 J/step** (varies by technology and conditions).
+- **Overall efficiency** (mechanical + conversion): often **0.3–0.6** (rough).
+- **Storage/conversion losses**: often **5–20%** depending on buffering and power electronics.
+- **Installed cost**: often **~75–160 $/ft²** as a rough range (real projects vary widely; some “showcase” installs can be much higher).
+"""
+    )
+
+    st.markdown("### What this is NOT")
+    st.markdown(
+        """
+- ❌ **Not powering a building** (outputs are usually modest).
+- ❌ **Not a standalone climate solution** (main value is often educational + micro-local loads).
+- ❌ **Not a quote**: cost outputs are **rough ranges**, not vendor pricing.
+- ✅ **What it is**: a **decision-support** tool to avoid over-installation and to size for realistic use cases.
+"""
+    )
+
+    st.markdown("### Math (expand)")
+    with st.expander("Show formula"):
+        st.code(
+            "Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_per_step × efficiency × (1 - storage_loss) ÷ 3600",
+            language="text"
+        )
+        st.markdown(
+            """
+**Explanation:**  
+- `visitors/day × peak_multiplier` estimates typical + peak conditions  
+- `(%on_zone/100) × useful_steps` estimates how many “useful” steps are captured  
+- `J_per_step × efficiency × (1 - storage_loss)` converts steps into usable electrical energy  
+- dividing by `3600` converts Joules into Wh
+"""
+        )
+
+    st.markdown("### Why it’s “Sustainable AI”")
+    st.write(
+        "The forecast module is lightweight (trend + weekday seasonality). "
+        "Its purpose is to **avoid over-installation** (materials, cost, maintenance) by sizing to realistic demand. "
+        "No large models, no personal data."
+    )
+
+    st.markdown("### Limits / caveats")
+    st.markdown(
+        """
+- Results are sensitive to **% on zone** and **useful steps**: location + design matter most.
+- Real performance depends on device specs, surface compliance, user behavior, and power electronics.
+- Use outputs for **micro-loads** (LEDs, sensors, small displays) and **engagement/pedagogy**.
 """
     )
