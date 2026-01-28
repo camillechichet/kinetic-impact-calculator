@@ -5,120 +5,218 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+# =========================================================
+# i18n (English only) — centralize UI strings
+# =========================================================
+STR = {
+    "en": {
+        "app_title": "Kinetic Impact Calculator",
+        "app_subtitle": "Decision-support MVP: net energy, practical uses, costs, uncertainty scenarios, and a lightweight forecast module.",
+        "reset_defaults": "🔄 Reset to defaults",
+        "defaults_loaded": "Defaults reloaded.",
+        "load_example": "Load example scenario",
+        "load_example_btn": "📌 Load example",
+        "loaded_scenario": "Example loaded:",
+        "glossary_btn": "📘 Glossary",
+        "glossary_title": "📘 Glossary",
+        "glossary_search": "Search the glossary",
+        "glossary_none": "No results.",
+        "see_source": "See source",
+        "mode": "Mode",
+        "beginner": "Beginner",
+        "advanced": "Advanced",
+        "quick_start": "Quick start (5 steps)",
+        "quick_start_caption": "Steps: 1) place → 2) visitors/day → 3) % on zone → 4) useful steps → 5) results",
+        "prev": "← Previous",
+        "next": "Next →",
+        "step": "Step",
+        "inputs_tab": "Inputs",
+        "results_tab": "Results",
+        "method_tab": "Methodology / Limits",
+        "context": "Context",
+        "preset_caption": "Preset:",
+        "preset_uncertainty": "Uncertainty:",
+        "apply_preset": "Apply place preset",
+        "preset_applied": "Preset applied for:",
+        "tour_step_1": "✅ Step 1: choose a place and apply a preset. Then click Next.",
+        "tour_step_2": "✅ Step 2: adjust visitors/day (+ peak multiplier if needed). Then click Next.",
+        "tour_step_3": "✅ Step 3: adjust % on zone. Then click Next.",
+        "tour_step_4": "✅ Step 4: adjust useful steps. Then click Next.",
+        "tour_step_5": "✅ Step 5: you are on Results. You can now refine % on zone / useful steps / J_net/step.",
+        "key_drivers": "Key drivers (what changes the result the most)",
+        "visitors_day": "Visitors / day (average)",
+        "data_quality": "Data quality",
+        "measured": "Measured",
+        "estimated": "Estimated",
+        "very_uncertain": "Very uncertain",
+        "confidence": "Confidence",
+        "peak_multiplier": "Peak multiplier",
+        "flow_zone": "Flow on equipped zone",
+        "pct_on_zone": "% visitors on equipped zone",
+        "useful_steps": "Useful steps / visitor",
+        "examples_pct": "Example: 2–10% (small zone) / 10–30% (central zone)",
+        "examples_steps": "Example: 20–60 (short corridor) / 80–200 (long passage)",
+        "tech_assumptions": "Technical assumptions",
+        "jnet": "J_net per step",
+        "dq_jnet": "Data quality (J_net/step)",
+        "auto_consumption": "System self-consumption (Wh/day)",
+        "sizing": "Installation sizing",
+        "area_ft2": "Equipped area (ft²)",
+        "tile_area_ft2": "Tile area (ft²)",
+        "tiles_est": "Estimate:",
+        "tiles_for": "tiles for",
+        "if_tile": "if 1 tile ≈",
+        "warning_steps": "⚠️ Useful steps per visitor look high vs zone geometry — risk of overestimation.",
+        "adjust_typical": "Adjust to a typical value",
+        "why": "Why?",
+        "why_text": (
+            "This is a rough sanity check using typical walking speed (~1.34 m/s) and step frequency (~2 Hz) "
+            "to detect very unlikely inputs. It’s a guardrail, not a truth."
+        ),
+        "costs": "Costs",
+        "capex_per_ft2": "Installed CAPEX ($/ft²)",
+        "fixed_cost": "Fixed cost (work/electrical/signage) $",
+        "maintenance_pct": "Annual maintenance (% of CAPEX)",
+        "amort_years": "Amortization (years)",
+        "sai": "Sustainable AI (lightweight)",
+        "use_demo": "Use demo dataset",
+        "upload_csv": "Upload CSV (columns: date, visitors)",
+        "horizon": "Horizon (days)",
+        "csv_loaded": "CSV loaded:",
+        "csv_error": "Could not read CSV:",
+        "dataset_preview": "Dataset preview",
+        "forecast_preview": "Forecast (lightweight)",
+        "results_title": "Results",
+        "model_not_do": "What this model does NOT do",
+        "not_quote": "Not a quote: costs vary by vendor and project.",
+        "not_building": "Not powering a building.",
+        "not_climate": "Not a climate solution alone (main value is pedagogy + micro-local loads).",
+        "exec_summary": "Executive summary (actionable)",
+        "net_energy": "Net energy",
+        "phrase_modest": "Key message: outputs are usually modest — strongest value is engagement + micro-local uses.",
+        "total_cost": "Total cost",
+        "cost_kwh_rough": "Cost/kWh (rough)",
+        "verdicts": "Verdicts (separated)",
+        "drivers_box": "What drives your result the most",
+        "wh_day": "Wh / day (primary)",
+        "wh_month": "Wh / month (~30d)",
+        "kwh_year": "kWh / year (~365d)",
+        "uncertainty": "Uncertainty (scenarios)",
+        "uncertainty_caption": "Reality depends mostly on % on zone and useful steps (placement + path).",
+        "what_power": "What can it power (per day)",
+        "led10": "10W LED (hours)",
+        "sensor2": "Low-power sensor 2Wh/day (days)",
+        "screen15": "Small screen ~15W (minutes)",
+        "phone12": "Phone charges (~12Wh)",
+        "reminder": "Reminder: harvesting energy is often modest. Best use: make energy visible + power micro-local loads.",
+        "costs_block": "Costs",
+        "capex": "CAPEX ($)",
+        "opex_year": "OPEX/year ($)",
+        "explain_costkwh": "ⓘ Explain cost/kWh (rough)",
+        "explain_costkwh_text": "Approx indicator to compare scenarios, not a quote. It explodes when production is tiny (normal for human harvesting).",
+        "export": "Export",
+        "download_csv": "Download results (CSV)",
+        "method_title": "Methodology / Limits",
+        "sources_jnet": "🔎 Source — J_net/step",
+        "sources_motion": "🔎 Source — speed/step rate",
+        "sources_units": "🔎 Source — units",
+        "core_formula": "Core formula (transparent)",
+        "math_expand": "Math (expand)",
+        "what_not": "What this is NOT",
+        "limits": "Limits (anti-greenwashing)",
+        "cost_note": "Cost note",
+        "cost_note_text": "Costs (CAPEX/OPEX) are not scientific constants: they depend on quotes and site constraints.",
+        "footer": "© Camille Chichet — Kinetic Impact Calculator",
+        "ok": "OK",
+        "go": "GO",
+        "no_go": "NO-GO",
+        "mixed": "MIXED",
+        "go_msg": "✅ GO —",
+        "no_go_msg": "⛔ NO-GO —",
+        "mixed_msg": "⚠️ MIXED —",
+        "plausible": "✅ plausible",
+        "optimistic": "⚠️ optimistic",
+        "improbable": "🚩 very unlikely",
+    }
+}
+LANG = "en"
+
+
+def t(k: str) -> str:
+    return STR[LANG].get(k, k)
+
 
 # =========================================================
 # Page config
 # =========================================================
-st.set_page_config(page_title="Kinetic Impact Calculator", page_icon="⚡", layout="wide")
+st.set_page_config(page_title=t("app_title"), page_icon="⚡", layout="wide")
 
 
 # =========================================================
-# Glossary + help system
+# Glossary + Sources
 # =========================================================
 GLOSSARY = {
-    "CAPEX": "Capital Expenditure: coût initial (matériel + installation + travaux fixes).",
-    "OPEX": "Operational Expenditure: coût annuel d’exploitation (maintenance, etc.).",
-    "Amortissement": "Période (années) sur laquelle on répartit le CAPEX pour estimer un coût annuel/total.",
-    "Coût/kWh (rough)": "Indicateur approximatif: compare un projet à un autre (pas un devis). Très sensible aux hypothèses.",
-    "J_net/pas": (
-        "Énergie électrique nette récupérée par pas (déjà 'net', mesurée en sortie électrique d’un système). "
-        "Cela évite de compter deux fois des rendements/pertes."
-    ),
-    "% sur zone": "Pourcentage des visiteurs qui passent réellement sur la zone équipée (placement = clé).",
-    "Pas utiles": (
-        "Nombre de pas 'captés' sur la zone par visiteur (dépend de la longueur du passage, du design, de la densité)."
-    ),
-    "Incertitude": "On affiche une plage (bas/moyen/haut) car % sur zone, pas utiles, et J_net varient beaucoup.",
-    "Dataset": "Historique (CSV: date, visitors) utilisé pour faire une prévision légère (trend + saisonnalité).",
-    "Horizon": "Nombre de jours prévus dans le futur par le module de prévision.",
-    "Auto-consommation": (
-        "Consommation propre du système (électronique, communication, LED témoin, etc.) en Wh/jour. "
-        "À faible énergie, elle peut annuler le gain."
-    ),
-    "Zone équipée": "Surface totale couverte par des dalles (ft²).",
-    "Vitesse / cadence": "Ordres de grandeur utiles pour vérifier la cohérence des pas vs la géométrie (sanity check).",
-    "Unités (J, Wh, kWh)": "1 Wh = 3600 J. On convertit J→Wh en divisant par 3600.",
+    "CAPEX": "Capital Expenditure: upfront cost (equipment + install + fixed works).",
+    "OPEX": "Operational Expenditure: yearly operating cost (maintenance, etc.).",
+    "Amortization": "Years used to spread CAPEX for rough annual/total costing.",
+    "Cost/kWh (rough)": "Approx indicator to compare scenarios (NOT a quote). Highly sensitive to assumptions.",
+    "J_net/step": "Net electrical energy delivered per step (already net; avoids double-counting efficiencies).",
+    "% on zone": "Share of visitors who actually walk on the equipped zone (placement is key).",
+    "Useful steps": "Captured steps per visitor on the zone (depends on zone length/path design/density).",
+    "Uncertainty": "We show low/mid/high because % on zone, useful steps, and J_net vary a lot.",
+    "Dataset": "CSV history (date, visitors) used by the lightweight forecast model.",
+    "Horizon": "Number of future days predicted by the forecast module.",
+    "Self-consumption": "System electronics consumption in Wh/day; can wipe out small gains.",
+    "Units (J, Wh, kWh)": "1 Wh = 3600 J. Convert J → Wh by dividing by 3600.",
 }
 
 SOURCES = {
-    "J_net/pas": {
-        "title": "Sources pour J_net/pas (exemples académiques)",
-        "links": [
-            ("Asadi et al. (2023) ~511 mJ/step", "https://doi.org/10.1016/j.seta.2023.103571"),
-            ("Jintanawan et al. (2020) jusqu’à ~702 mJ/step", "https://www.mdpi.com/1996-1073/13/20/5419"),
-            ("Thainiramit et al. (2022) tribo ~mJ", "https://www.mdpi.com/1996-1944/15/24/8853"),
-        ],
-        "note": "Les valeurs dépendent de la techno, de la charge électrique, de la fréquence et des conditions de test."
-    },
-    "Vitesse / cadence": {
-        "title": "Sources vitesse / cadence (sanity checks)",
-        "links": [
-            ("Weidmann (1993) vitesse libre ~1.34 m/s", "https://www.ped-net.org/uploads/media/weidmann-1993_01.pdf"),
-            ("Pachi & Ji (2005) cadence ~2 Hz (observations)", "https://trid.trb.org/View/750847"),
-        ],
-        "note": "On utilise ces ordres de grandeur uniquement pour détecter des saisies très improbables."
-    },
-    "Unités (J, Wh, kWh)": {
-        "title": "Source unités SI",
-        "links": [
-            ("BIPM SI Brochure (2019)", "https://www.bipm.org/en/publications/si-brochure"),
-        ],
-        "note": "Justifie la cohérence dimensionnelle et la conversion 1 h = 3600 s."
-    },
+    "J_net/step": [
+        ("Asadi et al. (2023) ~511 mJ/step", "https://doi.org/10.1016/j.seta.2023.103571"),
+        ("Jintanawan et al. (2020) up to ~702 mJ/step", "https://www.mdpi.com/1996-1073/13/20/5419"),
+        ("Thainiramit et al. (2022) tribo ~mJ range", "https://www.mdpi.com/1996-1944/15/24/8853"),
+    ],
+    "speed/step rate": [
+        ("Weidmann (1993) free speed ~1.34 m/s", "https://www.ped-net.org/uploads/media/weidmann-1993_01.pdf"),
+        ("Pachi & Ji (2005) step frequency ~2 Hz (observations)", "https://trid.trb.org/View/750847"),
+    ],
+    "units": [
+        ("BIPM SI Brochure (2019)", "https://www.bipm.org/en/publications/si-brochure"),
+    ]
 }
 
 
 def glossary_ui():
-    """Global glossary with search."""
-    st.markdown("### 📘 Glossaire")
-    q = st.text_input("Rechercher dans le glossaire", placeholder="Ex: CAPEX, J_net/pas, incertitude…")
+    st.markdown(f"### {t('glossary_title')}")
+    q = st.text_input(t("glossary_search"), placeholder="e.g., CAPEX, J_net/step, uncertainty…", key="glossary_search_input")
     items = list(GLOSSARY.items())
     if q:
         ql = q.lower()
         items = [(k, v) for k, v in items if ql in k.lower() or ql in v.lower()]
-
     if not items:
-        st.info("Aucun résultat.")
+        st.info(t("glossary_none"))
         return
-
     for term, definition in items:
         with st.expander(term):
             st.write(definition)
             if term in SOURCES:
-                st.markdown("**Voir la source**")
-                for label, url in SOURCES[term]["links"]:
+                st.markdown(f"**{t('see_source')}**")
+                for label, url in SOURCES[term]:
                     st.link_button(label, url)
-                st.caption(SOURCES[term].get("note", ""))
 
 
 def try_popover(label: str):
-    """
-    Streamlit a st.popover sur des versions récentes.
-    Si indisponible, on fallback sur un expander.
-    """
     if hasattr(st, "popover"):
         return st.popover(label)
     return st.expander(label)
 
 
-def help_tag(term: str) -> str:
-    """Help text includes pointer to glossary."""
-    base = GLOSSARY.get(term, "")
-    if base:
-        return f"{base}\n\n📘 Voir dans le glossaire: {term}"
-    return f"📘 Voir dans le glossaire: {term}"
-
-
 def badge_realism(value: float, ok_range: tuple[float, float], warn_range: tuple[float, float]) -> str:
     if ok_range[0] <= value <= ok_range[1]:
-        return "✅ plausible"
+        return t("plausible")
     if warn_range[0] <= value <= warn_range[1]:
-        return "⚠️ optimiste"
-    return "🚩 très improbable"
-
-
-def fmt_money(x: float) -> str:
-    return f"{x:,.0f}".replace(",", " ")
+        return t("optimistic")
+    return t("improbable")
 
 
 def safe_div(a: float, b: float) -> float:
@@ -129,6 +227,10 @@ def ft2_to_m2(x_ft2: float) -> float:
     return x_ft2 * 0.092903
 
 
+def fmt_money(x: float) -> str:
+    return f"{x:,.0f}".replace(",", " ")
+
+
 # =========================================================
 # Lightweight forecast (no sklearn)
 # =========================================================
@@ -136,7 +238,6 @@ def make_demo_visitors(n_days: int = 60, start: date | None = None) -> pd.DataFr
     if start is None:
         start = date.today() - timedelta(days=n_days)
     dates = pd.date_range(start=start, periods=n_days, freq="D")
-
     base = 1200
     trend = np.linspace(0, 250, n_days)
     weekday = np.array([1.0, 1.0, 1.05, 1.05, 1.1, 1.3, 1.25])  # Mon..Sun
@@ -158,11 +259,6 @@ def load_csv_visitors(file) -> pd.DataFrame:
 
 
 def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFrame:
-    """
-    IA frugale:
-    - trend: fit linéaire numpy.polyfit
-    - saisonnalité: correction par moyenne des résidus par jour de semaine
-    """
     d = df.copy().dropna()
     if len(d) < 7:
         last = int(d["visitors"].tail(7).mean()) if len(d) > 0 else 0
@@ -196,115 +292,45 @@ def lightweight_forecast(df: pd.DataFrame, horizon_days: int = 14) -> pd.DataFra
 
 
 # =========================================================
-# Presets + example scenarios (explicit)
+# Presets + example scenarios
 # =========================================================
 PRESETS = {
-    "Musée": {
-        "desc": "Flux modéré, parcours plus lent → % sur zone moyen, pas utiles moyens.",
-        "uncertainty": "Moyenne",
-        "values": {
-            "pct_on_zone": 8.0,
-            "useful_steps": 60.0,
-            "peak_multiplier": 1.2,
-            "area_ft2": 120.0,
-            "visitors_per_day": 1200,
-            "installed_cost_per_ft2": 140.0,
-            "fixed_cost": 12000.0,
-            "J_net_per_step": 0.5,
-            "auto_consumption_wh_day": 0.0,
-        },
+    "Museum": {
+        "desc": "Moderate flow, slower paths → medium % on zone, medium steps.",
+        "uncertainty": "Medium",
+        "values": {"pct_on_zone": 8.0, "useful_steps": 60.0, "peak_multiplier": 1.2, "area_ft2": 120.0, "visitors_per_day": 1200,
+                   "installed_cost_per_ft2": 140.0, "fixed_cost": 12000.0, "J_net_per_step": 0.5, "auto_consumption_wh_day": 0.0},
     },
-    "Gare": {
-        "desc": "Flux fort, passages répétitifs → % sur zone plus élevé, pas utiles élevés.",
-        "uncertainty": "Élevée",
-        "values": {
-            "pct_on_zone": 18.0,
-            "useful_steps": 120.0,
-            "peak_multiplier": 1.5,
-            "area_ft2": 220.0,
-            "visitors_per_day": 8000,
-            "installed_cost_per_ft2": 160.0,
-            "fixed_cost": 25000.0,
-            "J_net_per_step": 0.5,
-            "auto_consumption_wh_day": 5.0,
-        },
+    "Train station": {
+        "desc": "High flow, repeated crossings → higher % on zone, higher steps.",
+        "uncertainty": "High",
+        "values": {"pct_on_zone": 18.0, "useful_steps": 120.0, "peak_multiplier": 1.5, "area_ft2": 220.0, "visitors_per_day": 8000,
+                   "installed_cost_per_ft2": 160.0, "fixed_cost": 25000.0, "J_net_per_step": 0.5, "auto_consumption_wh_day": 5.0},
     },
-    "Stade": {
-        "desc": "Très gros pics (événements) → multiplier pic important.",
-        "uncertainty": "Élevée",
-        "values": {
-            "pct_on_zone": 12.0,
-            "useful_steps": 80.0,
-            "peak_multiplier": 2.5,
-            "area_ft2": 300.0,
-            "visitors_per_day": 25000,
-            "installed_cost_per_ft2": 180.0,
-            "fixed_cost": 40000.0,
-            "J_net_per_step": 0.5,
-            "auto_consumption_wh_day": 10.0,
-        },
+    "Stadium": {
+        "desc": "Big event peaks → high peak multiplier.",
+        "uncertainty": "High",
+        "values": {"pct_on_zone": 12.0, "useful_steps": 80.0, "peak_multiplier": 2.5, "area_ft2": 300.0, "visitors_per_day": 25000,
+                   "installed_cost_per_ft2": 180.0, "fixed_cost": 40000.0, "J_net_per_step": 0.5, "auto_consumption_wh_day": 10.0},
     },
-    "Centre commercial": {
-        "desc": "Flux continu, variations week-end → pic modéré, pas utiles moyens/élevés.",
-        "uncertainty": "Moyenne",
-        "values": {
-            "pct_on_zone": 10.0,
-            "useful_steps": 90.0,
-            "peak_multiplier": 1.4,
-            "area_ft2": 180.0,
-            "visitors_per_day": 6000,
-            "installed_cost_per_ft2": 150.0,
-            "fixed_cost": 20000.0,
-            "J_net_per_step": 0.5,
-            "auto_consumption_wh_day": 5.0,
-        },
+    "Mall": {
+        "desc": "Continuous flow, weekend variations → medium peak, medium/high steps.",
+        "uncertainty": "Medium",
+        "values": {"pct_on_zone": 10.0, "useful_steps": 90.0, "peak_multiplier": 1.4, "area_ft2": 180.0, "visitors_per_day": 6000,
+                   "installed_cost_per_ft2": 150.0, "fixed_cost": 20000.0, "J_net_per_step": 0.5, "auto_consumption_wh_day": 5.0},
     },
 }
 
-
 EXAMPLE_SCENARIOS = {
-    "Musée (réaliste)": {
-        "place_type": "Musée",
-        "visitors_per_day": 1500,
-        "pct_on_zone": 8.0,
-        "useful_steps": 60.0,
-        "J_net_per_step": 0.5,
-        "auto_consumption_wh_day": 0.0,
-        "area_ft2": 120.0,
-        "installed_cost_per_ft2": 140.0,
-        "fixed_cost": 12000.0,
-        "maintenance_pct": 6.0,
-        "amort_years": 8,
-        "peak_multiplier": 1.2,
-    },
-    "Gare (réaliste)": {
-        "place_type": "Gare",
-        "visitors_per_day": 12000,
-        "pct_on_zone": 18.0,
-        "useful_steps": 120.0,
-        "J_net_per_step": 0.5,
-        "auto_consumption_wh_day": 5.0,
-        "area_ft2": 220.0,
-        "installed_cost_per_ft2": 160.0,
-        "fixed_cost": 25000.0,
-        "maintenance_pct": 8.0,
-        "amort_years": 10,
-        "peak_multiplier": 1.5,
-    },
-    "Stade (événement)": {
-        "place_type": "Stade",
-        "visitors_per_day": 35000,
-        "pct_on_zone": 12.0,
-        "useful_steps": 80.0,
-        "J_net_per_step": 0.5,
-        "auto_consumption_wh_day": 10.0,
-        "area_ft2": 300.0,
-        "installed_cost_per_ft2": 180.0,
-        "fixed_cost": 40000.0,
-        "maintenance_pct": 8.0,
-        "amort_years": 10,
-        "peak_multiplier": 2.5,
-    },
+    "Museum (realistic)": {"place_type": "Museum", "visitors_per_day": 1500, "pct_on_zone": 8.0, "useful_steps": 60.0, "J_net_per_step": 0.5,
+                           "auto_consumption_wh_day": 0.0, "area_ft2": 120.0, "installed_cost_per_ft2": 140.0, "fixed_cost": 12000.0,
+                           "maintenance_pct": 6.0, "amort_years": 8, "peak_multiplier": 1.2},
+    "Train station (realistic)": {"place_type": "Train station", "visitors_per_day": 12000, "pct_on_zone": 18.0, "useful_steps": 120.0, "J_net_per_step": 0.5,
+                                  "auto_consumption_wh_day": 5.0, "area_ft2": 220.0, "installed_cost_per_ft2": 160.0, "fixed_cost": 25000.0,
+                                  "maintenance_pct": 8.0, "amort_years": 10, "peak_multiplier": 1.5},
+    "Stadium (event)": {"place_type": "Stadium", "visitors_per_day": 35000, "pct_on_zone": 12.0, "useful_steps": 80.0, "J_net_per_step": 0.5,
+                        "auto_consumption_wh_day": 10.0, "area_ft2": 300.0, "installed_cost_per_ft2": 180.0, "fixed_cost": 40000.0,
+                        "maintenance_pct": 8.0, "amort_years": 10, "peak_multiplier": 2.5},
 }
 
 
@@ -312,36 +338,26 @@ EXAMPLE_SCENARIOS = {
 # Session defaults
 # =========================================================
 DEFAULTS = {
-    "mode": "Débutant",
-    "place_type": "Musée",
-
-    # Key drivers
+    "mode": t("beginner"),
+    "place_type": "Museum",
     "visitors_per_day": 3300,
     "peak_multiplier": 1.0,
     "pct_on_zone": 12.0,
     "useful_steps": 115.0,
     "J_net_per_step": 0.5,
     "auto_consumption_wh_day": 0.0,
-
-    # Data quality tags
-    "dq_visitors": "Estimé",
-    "dq_pct_on_zone": "Très incertain",
-    "dq_useful_steps": "Très incertain",
-    "dq_J_net": "Très incertain",
-
-    # sizing + costs
+    "dq_visitors": t("estimated"),
+    "dq_pct_on_zone": t("very_uncertain"),
+    "dq_useful_steps": t("very_uncertain"),
+    "dq_J_net": t("very_uncertain"),
     "area_ft2": 190.0,
     "tile_area_ft2": 1.10,
     "installed_cost_per_ft2": 175.0,
     "fixed_cost": 20000.0,
     "maintenance_pct": 8.0,
     "amort_years": 9,
-
-    # forecast (advanced)
     "use_demo_dataset": True,
     "forecast_horizon_days": 14,
-
-    # guided tour
     "tour_step": 1,
     "tour_on": False,
 }
@@ -356,231 +372,237 @@ inp = st.session_state.inputs
 
 
 # =========================================================
-# Header + global controls
+# Header
 # =========================================================
-st.title("Kinetic Impact Calculator")
-st.caption("Decision-support MVP: énergie (net), usages concrets, coûts, scénarios d’incertitude, et prévision frugale.")
+st.title(t("app_title"))
+st.caption(t("app_subtitle"))
 
 top_l, top_m, top_r = st.columns([1.2, 1.2, 1.6])
+
 with top_l:
-    if st.button("🔄 Reset to defaults"):
+    if st.button(t("reset_defaults"), key="btn_reset_defaults"):
         st.session_state.inputs = DEFAULTS.copy()
-        st.success("Defaults rechargés.")
+        st.success(t("defaults_loaded"))
         st.rerun()
 
 with top_m:
-    scenario_name = st.selectbox("Load example scenario", list(EXAMPLE_SCENARIOS.keys()))
-    if st.button("📌 Charger scénario exemple"):
+    scenario_name = st.selectbox(t("load_example"), list(EXAMPLE_SCENARIOS.keys()), key="select_example_scenario")
+    if st.button(t("load_example_btn"), key="btn_load_example"):
         ex = EXAMPLE_SCENARIOS[scenario_name]
         for k, v in ex.items():
             st.session_state.inputs[k] = v
-        st.success(f"Scénario chargé: {scenario_name}")
+        st.success(f"{t('loaded_scenario')} {scenario_name}")
         st.rerun()
 
 with top_r:
-    # Glossary button + search
-    with try_popover("📘 Glossaire"):
+    with try_popover(t("glossary_btn")):
         glossary_ui()
 
-
-# Mode switch + Quick start guided tour
 mode_col, tour_col, _ = st.columns([1.2, 1.2, 1.6])
 with mode_col:
-    mode = st.radio("Mode", ["Débutant", "Avancé"], horizontal=True, index=0 if inp["mode"] == "Débutant" else 1)
+    mode = st.radio(
+        t("mode"),
+        [t("beginner"), t("advanced")],
+        horizontal=True,
+        index=0 if inp["mode"] == t("beginner") else 1,
+        key="radio_mode",
+    )
     inp["mode"] = mode
 
 with tour_col:
-    inp["tour_on"] = st.toggle("Quick start (tour 5 étapes)", value=bool(inp["tour_on"]))
+    # ✅ KEY ADDED (required)
+    inp["tour_on"] = st.toggle(t("quick_start"), value=bool(inp["tour_on"]), key="tour_on")
     if inp["tour_on"]:
-        st.caption("Étapes: 1) lieu → 2) visiteurs → 3) % zone → 4) pas utiles → 5) résultats")
+        st.caption(t("quick_start_caption"))
 
 
-tab_inputs, tab_results, tab_methods = st.tabs(["Inputs", "Results", "Methodology / Limits"])
+# =========================================================
+# Tabs
+# =========================================================
+tab_inputs, tab_results, tab_methods = st.tabs([t("inputs_tab"), t("results_tab"), t("method_tab")])
+
+
+# =========================================================
+# TOUR CONTROLS — RENDERED ONLY ONCE (Inputs tab only)
+# =========================================================
+def tour_controls_once():
+    """Render tour controls exactly once (Inputs tab only)."""
+    if not inp["tour_on"]:
+        return
+
+    step = int(inp.get("tour_step", 1))
+
+    b1, b2, b3 = st.columns([1, 1, 2])
+    with b1:
+        # ✅ KEY ADDED (required)
+        if st.button(t("prev"), disabled=(step <= 1), key="tour_prev_btn"):
+            inp["tour_step"] = max(1, step - 1)
+            st.rerun()
+    with b2:
+        # ✅ KEY ADDED (required)
+        if st.button(t("next"), disabled=(step >= 5), key="tour_next_btn"):
+            inp["tour_step"] = min(5, step + 1)
+            st.rerun()
+    with b3:
+        st.progress(step / 5)
+        st.write(f"{t('step')} {step}/5")
 
 
 # =========================================================
 # Inputs tab
 # =========================================================
 with tab_inputs:
+    # ✅ Tour controls shown ONCE here
+    tour_controls_once()
+
+    tour_step = int(inp.get("tour_step", 1)) if inp["tour_on"] else 999
+
     c1, c2, c3 = st.columns([1.1, 1.0, 1.0], gap="large")
 
-    # ---------- Guided tour step gating ----------
-    tour_step = int(inp.get("tour_step", 1))
-    if not inp["tour_on"]:
-        tour_step = 999  # show all
-
-    def tour_controls():
-        if not inp["tour_on"]:
-            return
-        b1, b2, b3 = st.columns([1, 1, 2])
-        with b1:
-            if st.button("⬅️ Précédent", disabled=(tour_step <= 1)):
-                inp["tour_step"] = max(1, tour_step - 1)
-                st.rerun()
-        with b2:
-            if st.button("Suivant ➡️", disabled=(tour_step >= 5)):
-                inp["tour_step"] = min(5, tour_step + 1)
-                st.rerun()
-        with b3:
-            st.progress(tour_step / 5)
-            st.write(f"Étape {tour_step}/5")
-
-    tour_controls()
-
-    # ---------- Column 1: Context + Flow ----------
+    # ---------------- Column 1: Context + Flow ----------------
     with c1:
-        st.subheader("Context")
+        st.subheader(t("context"))
 
-        # Preset selection with description + uncertainty
         place_type = st.selectbox(
-            "Type de lieu",
+            "Place type",
             options=list(PRESETS.keys()),
             index=list(PRESETS.keys()).index(inp["place_type"]) if inp["place_type"] in PRESETS else 0,
-            help=help_tag("Dataset") + "\n\n(Le preset ne charge pas un dataset; il pré-remplit des valeurs typiques.)",
+            key="select_place_type",
         )
         inp["place_type"] = place_type
+        st.caption(f"{t('preset_caption')} {PRESETS[place_type]['desc']} • {t('preset_uncertainty')} **{PRESETS[place_type]['uncertainty']}**")
 
-        preset_desc = PRESETS[place_type]["desc"]
-        preset_unc = PRESETS[place_type]["uncertainty"]
-        st.caption(f"Preset: {preset_desc}  •  Incertitude: **{preset_unc}**")
-
-        if (tour_step >= 1) and st.button("Appliquer preset du lieu"):
+        if st.button(t("apply_preset"), key="btn_apply_preset"):
             p = PRESETS.get(place_type, {}).get("values", {})
             for k, v in p.items():
                 inp[k] = v
-            st.success(f"Preset appliqué pour: {place_type}")
+            st.success(f"{t('preset_applied')} {place_type}")
             st.rerun()
 
-        # Step 1 in tour: stop here
         if inp["tour_on"] and tour_step == 1:
-            st.info("✅ Étape 1 : choisis un lieu + applique un preset. Puis clique 'Suivant'.")
-            tour_controls()
+            st.info(t("tour_step_1"))
             st.stop()
 
         st.markdown("---")
-        st.subheader("Key drivers (ce qui change le plus le résultat)")
+        st.subheader(t("key_drivers"))
 
         visitors_per_day = st.number_input(
-            "Visiteurs / jour (moyenne)",
+            t("visitors_day"),
             min_value=0,
             value=int(inp["visitors_per_day"]),
             step=50,
-            help=help_tag("Dataset"),
+            key="num_visitors_day",
         )
-        dq_visitors = st.selectbox("Qualité donnée (visiteurs)", ["Mesuré", "Estimé", "Très incertain"],
-                                  index=["Mesuré", "Estimé", "Très incertain"].index(inp["dq_visitors"]),
-                                  help="Badge confiance pour expliquer d’où vient la valeur.")
+        dq_visitors = st.selectbox(
+            f"{t('data_quality')} ({t('visitors_day')})",
+            [t("measured"), t("estimated"), t("very_uncertain")],
+            index=[t("measured"), t("estimated"), t("very_uncertain")].index(inp["dq_visitors"]),
+            key="dq_visitors",
+        )
         inp["dq_visitors"] = dq_visitors
-        st.write(f"🔎 Confiance: **{dq_visitors}**  •  {badge_realism(float(visitors_per_day), (300, 50000), (50, 120000))}")
+        st.write(f"🔎 {t('confidence')}: **{dq_visitors}** • {badge_realism(float(visitors_per_day), (300, 50000), (50, 120000))}")
 
         peak_multiplier = st.slider(
-            "Multiplicateur pic",
+            t("peak_multiplier"),
             1.0, 5.0, float(inp["peak_multiplier"]), 0.05,
-            help="Ex: 1.0 (normal), 1.2–1.8 (week-end), 2–3 (événement).",
+            key="slider_peak_multiplier",
         )
 
         st.markdown("---")
-        st.subheader("Flow on equipped zone")
+        st.subheader(t("flow_zone"))
 
         pct_on_zone = st.slider(
-            "% visiteurs sur zone",
+            t("pct_on_zone"),
             0.0, 100.0, float(inp["pct_on_zone"]), 0.5,
-            help=help_tag("% sur zone"),
+            key="slider_pct_on_zone",
         )
-        dq_pct = st.selectbox("Qualité donnée (% sur zone)", ["Mesuré", "Estimé", "Très incertain"],
-                              index=["Mesuré", "Estimé", "Très incertain"].index(inp["dq_pct_on_zone"]))
+        dq_pct = st.selectbox(
+            f"{t('data_quality')} ({t('pct_on_zone')})",
+            [t("measured"), t("estimated"), t("very_uncertain")],
+            index=[t("measured"), t("estimated"), t("very_uncertain")].index(inp["dq_pct_on_zone"]),
+            key="dq_pct_on_zone",
+        )
         inp["dq_pct_on_zone"] = dq_pct
-        st.caption("Ex: 2–10% (zone petite) / 10–30% (zone centrale)")
-        st.write(f"🔎 Confiance: **{dq_pct}**  •  {badge_realism(pct_on_zone, (2, 30), (0.5, 60))}")
+        st.caption(t("examples_pct"))
+        st.write(f"🔎 {t('confidence')}: **{dq_pct}** • {badge_realism(pct_on_zone, (2, 30), (0.5, 60))}")
 
         useful_steps = st.slider(
-            "Pas utiles / visiteur",
+            t("useful_steps"),
             0.0, 300.0, float(inp["useful_steps"]), 5.0,
-            help=help_tag("Pas utiles"),
+            key="slider_useful_steps",
         )
-        dq_steps = st.selectbox("Qualité donnée (pas utiles)", ["Mesuré", "Estimé", "Très incertain"],
-                                index=["Mesuré", "Estimé", "Très incertain"].index(inp["dq_useful_steps"]))
+        dq_steps = st.selectbox(
+            f"{t('data_quality')} ({t('useful_steps')})",
+            [t("measured"), t("estimated"), t("very_uncertain")],
+            index=[t("measured"), t("estimated"), t("very_uncertain")].index(inp["dq_useful_steps"]),
+            key="dq_useful_steps",
+        )
         inp["dq_useful_steps"] = dq_steps
-        st.caption("Ex: 20–60 (petit couloir) / 80–200 (long passage)")
-        st.write(f"🔎 Confiance: **{dq_steps}**  •  {badge_realism(useful_steps, (20, 200), (5, 300))}")
-
-        # Step gating for tour: visitors then pct then steps
-        if inp["tour_on"] and tour_step in (2, 3, 4):
-            if tour_step == 2:
-                st.info("✅ Étape 2 : ajuste visiteurs/jour (+ pic si besoin). Puis 'Suivant'.")
-                tour_controls()
-                st.stop()
-            if tour_step == 3:
-                st.info("✅ Étape 3 : ajuste % sur zone. Puis 'Suivant'.")
-                tour_controls()
-                st.stop()
-            if tour_step == 4:
-                st.info("✅ Étape 4 : ajuste pas utiles. Puis 'Suivant'.")
-                tour_controls()
-                st.stop()
+        st.caption(t("examples_steps"))
+        st.write(f"🔎 {t('confidence')}: **{dq_steps}** • {badge_realism(useful_steps, (20, 200), (5, 300))}")
 
         inp["visitors_per_day"] = int(visitors_per_day)
         inp["peak_multiplier"] = float(peak_multiplier)
         inp["pct_on_zone"] = float(pct_on_zone)
         inp["useful_steps"] = float(useful_steps)
 
-    # ---------- Column 2: Technical + sizing ----------
-    with c2:
-        st.subheader("Technical assumptions")
+        if inp["tour_on"] and tour_step == 2:
+            st.info(t("tour_step_2"))
+            st.stop()
+        if inp["tour_on"] and tour_step == 3:
+            st.info(t("tour_step_3"))
+            st.stop()
+        if inp["tour_on"] and tour_step == 4:
+            st.info(t("tour_step_4"))
+            st.stop()
 
-        # Beginner shows only key drivers. Advanced can see sizing too (still useful in beginner though).
-        J_net_per_step = st.slider(
-            "J_net/pas",
+    # ---------------- Column 2: Technical + sizing ----------------
+    with c2:
+        st.subheader(t("tech_assumptions"))
+
+        jnet = st.slider(
+            t("jnet"),
             0.005, 1.0, float(inp["J_net_per_step"]), 0.005,
-            help=help_tag("J_net/pas"),
+            key="slider_jnet",
         )
-        dq_jnet = st.selectbox("Qualité donnée (J_net/pas)", ["Mesuré", "Estimé", "Très incertain"],
-                               index=["Mesuré", "Estimé", "Très incertain"].index(inp["dq_J_net"]))
+        dq_jnet = st.selectbox(
+            t("dq_jnet"),
+            [t("measured"), t("estimated"), t("very_uncertain")],
+            index=[t("measured"), t("estimated"), t("very_uncertain")].index(inp["dq_J_net"]),
+            key="dq_jnet",
+        )
         inp["dq_J_net"] = dq_jnet
 
-        # quick access to sources (trust & transparency)
-        with try_popover("ⓘ Voir la source (J_net/pas)"):
-            st.write(SOURCES["J_net/pas"]["title"])
-            for label, url in SOURCES["J_net/pas"]["links"]:
+        with try_popover(f"ⓘ {t('see_source')} (J_net/step)"):
+            for label, url in SOURCES["J_net/step"]:
                 st.link_button(label, url)
-            st.caption(SOURCES["J_net/pas"]["note"])
 
-        auto_consumption_wh_day = st.number_input(
-            "Auto-consommation (Wh/jour)",
+        auto_c = st.number_input(
+            t("auto_consumption"),
             min_value=0.0,
             value=float(inp["auto_consumption_wh_day"]),
             step=1.0,
-            help=help_tag("Auto-consommation"),
+            key="num_auto_consumption",
         )
 
-        inp["J_net_per_step"] = float(J_net_per_step)
-        inp["auto_consumption_wh_day"] = float(auto_consumption_wh_day)
+        inp["J_net_per_step"] = float(jnet)
+        inp["auto_consumption_wh_day"] = float(auto_c)
 
-        st.caption(f"🔎 Confiance: **{dq_jnet}**  •  {badge_realism(J_net_per_step, (0.05, 0.8), (0.01, 1.0))}")
+        st.write(f"🔎 {t('confidence')}: **{dq_jnet}** • {badge_realism(jnet, (0.05, 0.8), (0.01, 1.0))}")
 
         st.markdown("---")
-        st.subheader("Installation sizing")
+        st.subheader(t("sizing"))
 
-        area_ft2 = st.number_input(
-            "Zone équipée (ft²)",
-            min_value=1.0,
-            value=float(inp["area_ft2"]),
-            step=10.0,
-            help=help_tag("Zone équipée"),
-        )
-        tile_area_ft2 = st.number_input(
-            "Surface d’une dalle (ft²)",
-            min_value=0.2,
-            value=float(inp["tile_area_ft2"]),
-            step=0.05,
-        )
-        est_tiles = int(round(area_ft2 / tile_area_ft2))
-        st.info(f"≈ **{est_tiles} dalles** pour {area_ft2:.0f} ft² (si 1 dalle ≈ {tile_area_ft2:.2f} ft²)")
+        area_ft2 = st.number_input(t("area_ft2"), min_value=1.0, value=float(inp["area_ft2"]), step=10.0, key="num_area_ft2")
+        tile_area_ft2 = st.number_input(t("tile_area_ft2"), min_value=0.2, value=float(inp["tile_area_ft2"]), step=0.05, key="num_tile_area_ft2")
 
         inp["area_ft2"] = float(area_ft2)
         inp["tile_area_ft2"] = float(tile_area_ft2)
 
-        # Intelligent warning + action
+        est_tiles = int(round(area_ft2 / tile_area_ft2))
+        st.info(f"{t('tiles_est')} ~ **{est_tiles}** {t('tiles_for')} {area_ft2:.0f} ft² ({t('if_tile')} {tile_area_ft2:.2f} ft²).")
+
+        # sanity check warning
         area_m2 = ft2_to_m2(area_ft2)
         approx_length_m = max(0.5, float(np.sqrt(area_m2)))
         v_free = 1.34
@@ -588,74 +610,47 @@ with tab_inputs:
         step_len = v_free / f_step
         plausible_upper_steps = 2.5 * (approx_length_m / step_len)
 
-        if useful_steps > plausible_upper_steps and useful_steps > 30:
-            st.warning(
-                f"⚠️ Pas/visiteur élevé vs zone (~{area_ft2:.0f} ft²). "
-                f"Risque de surestimation. (Longueur typique ~{approx_length_m:.1f} m)"
-            )
+        if inp["useful_steps"] > plausible_upper_steps and inp["useful_steps"] > 30:
+            st.warning(f"{t('warning_steps')} (typical length ~{approx_length_m:.1f} m)")
             a1, a2 = st.columns([1, 1])
             with a1:
-                if st.button("Ajuster à une valeur typique"):
-                    # Typical fallback by place
+                if st.button(t("adjust_typical"), key="btn_adjust_typical_steps"):
                     typical = {
-                        "Musée": 60.0,
-                        "Gare": 120.0,
-                        "Stade": 80.0,
-                        "Centre commercial": 90.0
+                        "Museum": 60.0,
+                        "Train station": 120.0,
+                        "Stadium": 80.0,
+                        "Mall": 90.0
                     }.get(inp["place_type"], 80.0)
                     inp["useful_steps"] = typical
-                    st.success(f"Pas utiles réglés à {typical:.0f}.")
                     st.rerun()
             with a2:
-                with st.expander("Pourquoi ?"):
-                    st.write(
-                        "On compare grossièrement tes pas utiles à ce qu’une traversée plausible de la zone "
-                        "permettrait (ordre de grandeur via vitesse libre ~1.34 m/s et cadence ~2 Hz). "
-                        "Ce n’est pas une vérité, juste un garde-fou anti-surestimation."
-                    )
-                    st.markdown("**Voir la source**")
-                    st.link_button("Weidmann (1993)", SOURCES["Vitesse / cadence"]["links"][0][1])
-                    st.link_button("Pachi & Ji (2005)", SOURCES["Vitesse / cadence"]["links"][1][1])
+                with st.expander(t("why"), expanded=False):
+                    st.write(t("why_text"))
+                    for label, url in SOURCES["speed/step rate"]:
+                        st.link_button(label, url)
 
-    # ---------- Column 3: Costs + (advanced) forecast/export ----------
+    # ---------------- Column 3: Costs + (advanced) forecast/export ----------------
     with c3:
-        st.subheader("Costs")
+        st.subheader(t("costs"))
 
-        installed_cost_per_ft2 = st.slider(
-            "CAPEX $/ft²",
-            50.0, 900.0, float(inp["installed_cost_per_ft2"]), 5.0,
-            help=help_tag("CAPEX"),
-        )
-        fixed_cost = st.number_input(
-            "Coût fixe (travaux/élec/signalétique) $",
-            min_value=0.0,
-            value=float(inp["fixed_cost"]),
-            step=1000.0,
-            help=help_tag("CAPEX"),
-        )
-        maintenance_pct = st.slider(
-            "OPEX maintenance (% du CAPEX)",
-            0.0, 20.0, float(inp["maintenance_pct"]), 0.5,
-            help=help_tag("OPEX"),
-        )
-        amort_years = st.slider(
-            "Amortissement (années)",
-            1, 20, int(inp["amort_years"]), 1,
-            help=help_tag("Amortissement"),
-        )
+        capex_ft2 = st.slider(t("capex_per_ft2"), 50.0, 900.0, float(inp["installed_cost_per_ft2"]), 5.0, key="slider_capex_ft2")
+        fixed_cost = st.number_input(t("fixed_cost"), min_value=0.0, value=float(inp["fixed_cost"]), step=1000.0, key="num_fixed_cost")
+        maint = st.slider(t("maintenance_pct"), 0.0, 20.0, float(inp["maintenance_pct"]), 0.5, key="slider_maint_pct")
+        amort = st.slider(t("amort_years"), 1, 20, int(inp["amort_years"]), 1, key="slider_amort")
 
-        inp["installed_cost_per_ft2"] = float(installed_cost_per_ft2)
+        inp["installed_cost_per_ft2"] = float(capex_ft2)
         inp["fixed_cost"] = float(fixed_cost)
-        inp["maintenance_pct"] = float(maintenance_pct)
-        inp["amort_years"] = int(amort_years)
+        inp["maintenance_pct"] = float(maint)
+        inp["amort_years"] = int(amort)
 
-        if inp["mode"] == "Avancé":
+        if inp["mode"] == t("advanced"):
             st.markdown("---")
-            st.subheader("Sustainable AI (lightweight)")
+            st.subheader(t("sai"))
 
-            use_demo = st.checkbox("Utiliser dataset démo", value=bool(inp["use_demo_dataset"]), help=help_tag("Dataset"))
-            uploaded = st.file_uploader("Upload CSV (date, visitors)", type=["csv"], help=help_tag("Dataset"))
-            horizon = st.slider("Horizon (jours)", 7, 60, int(inp["forecast_horizon_days"]), 1, help=help_tag("Horizon"))
+            use_demo = st.checkbox(t("use_demo"), value=bool(inp["use_demo_dataset"]), key="chk_use_demo")
+            uploaded = st.file_uploader(t("upload_csv"), type=["csv"], key="uploader_csv")
+            horizon = st.slider(t("horizon"), 7, 60, int(inp["forecast_horizon_days"]), 1, key="slider_horizon")
+
             inp["use_demo_dataset"] = bool(use_demo)
             inp["forecast_horizon_days"] = int(horizon)
 
@@ -663,18 +658,18 @@ with tab_inputs:
             if uploaded is not None:
                 try:
                     df_hist = load_csv_visitors(uploaded)
-                    st.success(f"CSV chargé: {len(df_hist)} lignes.")
+                    st.success(f"{t('csv_loaded')} {len(df_hist)} rows")
                 except Exception as e:
-                    st.error(f"Impossible de lire le CSV: {e}")
+                    st.error(f"{t('csv_error')} {e}")
             elif use_demo:
                 df_hist = make_demo_visitors(n_days=60)
 
             if df_hist is not None:
-                st.write("Aperçu dataset:")
+                st.write(t("dataset_preview"))
                 st.dataframe(df_hist.tail(10), use_container_width=True)
 
                 df_fc = lightweight_forecast(df_hist, horizon_days=horizon)
-                st.write("Prévision (IA légère):")
+                st.write(t("forecast_preview"))
                 st.dataframe(df_fc.head(10), use_container_width=True)
 
                 chart_df = pd.concat(
@@ -682,14 +677,14 @@ with tab_inputs:
                         df_hist.rename(columns={"visitors": "value"}).assign(kind="history")[["date", "value", "kind"]],
                         df_fc.rename(columns={"visitors_pred": "value"}).assign(kind="forecast")[["date", "value", "kind"]],
                     ],
-                    ignore_index=True
+                    ignore_index=True,
                 )
                 chart_df["date"] = pd.to_datetime(chart_df["date"])
                 st.line_chart(chart_df.set_index("date")[["value"]])
 
 
 # =========================================================
-# Compute results (shared)
+# Shared computations
 # =========================================================
 steps_captured = (
     inp["visitors_per_day"]
@@ -698,130 +693,106 @@ steps_captured = (
     * inp["useful_steps"]
 )
 
-gross_energy_wh_day = steps_captured * inp["J_net_per_step"] / 3600.0
-net_energy_wh_day = max(0.0, gross_energy_wh_day - inp["auto_consumption_wh_day"])
+gross_wh_day = steps_captured * inp["J_net_per_step"] / 3600.0
+net_wh_day = max(0.0, gross_wh_day - inp["auto_consumption_wh_day"])
 
-net_kwh_day = net_energy_wh_day / 1000.0
-net_wh_month = net_energy_wh_day * 30.0
-net_kwh_year = net_kwh_day * 365.0
+wh_month = net_wh_day * 30.0
+kwh_year = (net_wh_day / 1000.0) * 365.0
 
 capex = inp["area_ft2"] * inp["installed_cost_per_ft2"] + inp["fixed_cost"]
 opex_year = (inp["maintenance_pct"] / 100.0) * capex
 N = inp["amort_years"]
 total_cost_N = capex + opex_year * N
-cost_per_kwh = safe_div(total_cost_N, net_kwh_year * N) if net_kwh_year > 0 else float("inf")
+cost_per_kwh = safe_div(total_cost_N, kwh_year * N) if kwh_year > 0 else float("inf")
 
-# Uncertainty scenarios (simple multipliers)
-scenarios = {"low": 0.6, "mid": 1.0, "high": 1.4}
-df_scen = pd.DataFrame([{"scenario": k, "Wh/day": net_energy_wh_day * v} for k, v in scenarios.items()])
-df_scen["scenario"] = pd.Categorical(df_scen["scenario"], categories=["low", "mid", "high"], ordered=True)
-df_scen = df_scen.sort_values("scenario").set_index("scenario")
+df_scen = pd.DataFrame(
+    {"scenario": ["low", "mid", "high"], "Wh/day": [net_wh_day * 0.6, net_wh_day * 1.0, net_wh_day * 1.4]}
+).set_index("scenario")
 
-# Dominant parameters box
-dominants = [
-    ("1) % sur zone", inp["pct_on_zone"]),
-    ("2) Pas utiles", inp["useful_steps"]),
-    ("3) J_net/pas", inp["J_net_per_step"]),
-]
-
-# Equivalences per day (very simple)
-led10w_hours = safe_div(net_energy_wh_day, 10.0)
-lowpower_sensor_days = safe_div(net_energy_wh_day, 2.0)      # 2Wh/day device budget
-small_screen_minutes = safe_div(net_energy_wh_day, 15.0) * 60 # 15W small screen
-phone_charges = safe_div(net_energy_wh_day, 12.0)
+led10_hours = safe_div(net_wh_day, 10.0)
+sensor_days = safe_div(net_wh_day, 2.0)
+screen_minutes = safe_div(net_wh_day, 15.0) * 60.0
+phone_charges = safe_div(net_wh_day, 12.0)
 
 
-# Verdicts split
 def verdict_energy_roi():
-    if net_kwh_year <= 0:
-        return "NO-GO", "énergie nette ~0 après auto-consommation."
-    if np.isfinite(cost_per_kwh) and cost_per_kwh < 5 and net_kwh_year > 300:
-        return "MIXED", "moins extrême, mais rarement compétitif vs réseau."
-    return "NO-GO", "coût/kWh très élevé vs production (harvesting généralement modeste)."
+    if kwh_year <= 0:
+        return t("no_go"), "net energy is ~0 after self-consumption."
+    return t("no_go"), "cost/kWh is typically extremely high vs output (human harvesting is usually modest)."
 
 
 def verdict_pedagogy():
     if inp["pct_on_zone"] < 1.0 or inp["useful_steps"] < 10:
-        return "MIXED", "zone trop peu traversée → revoir emplacement/surface."
-    return "GO", "bon pour engagement: rendre l’énergie tangible + micro-usages locaux."
+        return t("mixed"), "zone is rarely crossed — consider placement/path redesign."
+    return t("go"), "good for engagement: making energy tangible + powering micro-local loads."
+
+
+def show_verdict(kind: str, reason: str):
+    if kind == t("go"):
+        st.success(f"{t('go_msg')} {reason}")
+    elif kind == t("mixed"):
+        st.warning(f"{t('mixed_msg')} {reason}")
+    else:
+        st.error(f"{t('no_go_msg')} {reason}")
 
 
 roi_kind, roi_reason = verdict_energy_roi()
 ped_kind, ped_reason = verdict_pedagogy()
 
 
-def show_verdict(kind: str, reason: str):
-    if kind == "GO":
-        st.success(f"✅ GO — {reason}")
-    elif kind == "MIXED":
-        st.warning(f"⚠️ MIXTE — {reason}")
-    else:
-        st.error(f"⛔ NO-GO — {reason}")
-
-
 # =========================================================
 # Results tab
 # =========================================================
 with tab_results:
-    st.subheader("Results")
+    st.subheader(t("results_title"))
 
-    # Mini 'what model is NOT' visible (trust)
     with st.container(border=True):
-        st.markdown("**Ce que ce modèle ne fait pas**")
-        st.markdown("- ❌ Pas un devis (CAPEX/OPEX varient selon projets)\n- ❌ Pas 'alimenter un bâtiment'\n- ❌ Pas une solution climat seule (valeur surtout pédagogique)")
+        st.markdown(f"**{t('model_not_do')}**")
+        st.markdown(f"- ❌ {t('not_quote')}\n- ❌ {t('not_building')}\n- ❌ {t('not_climate')}")
 
-    # Executive summary
     with st.container(border=True):
-        st.markdown("### Executive summary (actionnable)")
-        st.write(f"**Énergie nette**: **{net_energy_wh_day:.2f} Wh/jour**  •  {net_wh_month:.1f} Wh/mois  •  {net_kwh_year:.2f} kWh/an")
-        st.caption("Phrase clé: c’est généralement modeste — l’intérêt principal est souvent l’engagement + micro-usages.")
-        st.write(f"**Coût total**: {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/an OPEX → **{cost_per_kwh:,.2f} $/kWh**".replace(",", " "))
-        st.caption("Coût/kWh (rough): à utiliser pour comparer des scénarios, pas comme un devis.")
-        st.markdown("**Verdicts (séparés)**")
+        st.markdown(f"### {t('exec_summary')}")
+        st.write(f"**{t('net_energy')}**: **{net_wh_day:.2f} Wh/day** • {wh_month:.1f} Wh/month • {kwh_year:.2f} kWh/year")
+        st.caption(t("phrase_modest"))
+        st.write(f"**{t('total_cost')}**: {fmt_money(capex)}$ CAPEX + {fmt_money(opex_year)}$/year OPEX → **{cost_per_kwh:,.2f} $/kWh**".replace(",", " "))
+        st.caption(t("cost_kwh_rough"))
+        st.markdown(f"**{t('verdicts')}**")
         show_verdict(roi_kind, roi_reason)
         show_verdict(ped_kind, ped_reason)
 
-    # Dominant parameters
     with st.container(border=True):
-        st.markdown("### Ce qui change le plus ton résultat")
-        st.write("👉 **1) % sur zone  2) pas utiles  3) J_net/pas** (et ensuite visiteurs/jour).")
+        st.markdown(f"### {t('drivers_box')}")
+        st.write("👉 1) % on zone  2) useful steps  3) J_net/step (then visitors/day).")
 
-    # Energy views (consistent)
     m1, m2, m3 = st.columns(3)
-    m1.metric("Wh / jour (principal)", f"{net_energy_wh_day:.2f}")
-    m2.metric("Wh / mois (~30j)", f"{net_wh_month:.1f}")
-    m3.metric("kWh / an (~365j)", f"{net_kwh_year:.2f}")
+    m1.metric(t("wh_day"), f"{net_wh_day:.2f}")
+    m2.metric(t("wh_month"), f"{wh_month:.1f}")
+    m3.metric(t("kwh_year"), f"{kwh_year:.2f}")
 
-    # Scenarios chart
-    st.markdown("### Incertitude (scénarios)")
+    st.markdown(f"### {t('uncertainty')}")
     st.bar_chart(df_scen[["Wh/day"]])
-    st.caption("La réalité dépend surtout de **% sur zone** et **pas utiles** (placement + parcours).")
+    st.caption(t("uncertainty_caption"))
 
-    # What can it power (more concrete)
-    st.markdown("### What can it power (par jour)")
+    st.markdown(f"### {t('what_power')}")
     e1, e2, e3, e4 = st.columns(4)
-    e1.metric("LED 10W (heures)", f"{led10w_hours:.2f}")
-    e2.metric("Capteur low-power 2Wh/j (jours)", f"{lowpower_sensor_days:.2f}")
-    e3.metric("Petit écran ~15W (minutes)", f"{small_screen_minutes:.1f}")
-    e4.metric("Charges téléphone (~12Wh)", f"{phone_charges:.2f}")
+    e1.metric(t("led10"), f"{led10_hours:.2f}")
+    e2.metric(t("sensor2"), f"{sensor_days:.2f}")
+    e3.metric(t("screen15"), f"{screen_minutes:.1f}")
+    e4.metric(t("phone12"), f"{phone_charges:.2f}")
 
-    st.info("Rappel: l’énergie est souvent **modeste**. Valeur forte: rendre l’énergie visible + alimenter des micro-usages locaux.")
+    st.info(t("reminder"))
 
-    # Costs block + explainers
-    st.markdown("### Costs")
+    st.markdown(f"### {t('costs_block')}")
     c1, c2, c3 = st.columns(3)
-    c1.metric("CAPEX ($)", fmt_money(capex))
-    c2.metric("OPEX/an ($)", fmt_money(opex_year))
-    c3.metric("Coût/kWh (rough)", f"{cost_per_kwh:.2f}" if np.isfinite(cost_per_kwh) else "∞")
+    c1.metric(t("capex"), fmt_money(capex))
+    c2.metric(t("opex_year"), fmt_money(opex_year))
+    c3.metric(t("cost_kwh_rough"), f"{cost_per_kwh:.2f}" if np.isfinite(cost_per_kwh) else "∞")
 
-    with try_popover("ⓘ Expliquer coût/kWh (rough)"):
-        st.write(GLOSSARY["Coût/kWh (rough)"])
-        st.caption("Il explose si la production est très faible — c’est normal sur du harvesting piéton.")
-        st.caption("Astuce: utilise-le pour comparer des scénarios (emplacement A vs B) plutôt que comme 'prix absolu'.")
+    with try_popover(t("explain_costkwh")):
+        st.write(t("explain_costkwh_text"))
 
-    # Export
-    if inp["mode"] == "Avancé":
-        st.markdown("### Export")
+    if inp["mode"] == t("advanced"):
+        st.markdown(f"### {t('export')}")
         export = {
             "place_type": inp["place_type"],
             "visitors_per_day": inp["visitors_per_day"],
@@ -829,7 +800,7 @@ with tab_results:
             "pct_on_zone": inp["pct_on_zone"],
             "useful_steps": inp["useful_steps"],
             "J_net_per_step": inp["J_net_per_step"],
-            "auto_consumption_wh_day": inp["auto_consumption_wh_day"],
+            "auto_consumption_Wh_day": inp["auto_consumption_wh_day"],
             "area_ft2": inp["area_ft2"],
             "tile_area_ft2": inp["tile_area_ft2"],
             "installed_cost_per_ft2": inp["installed_cost_per_ft2"],
@@ -837,92 +808,74 @@ with tab_results:
             "maintenance_pct": inp["maintenance_pct"],
             "amort_years": inp["amort_years"],
             "steps_captured_per_day": steps_captured,
-            "gross_energy_Wh_day": gross_energy_wh_day,
-            "net_energy_Wh_day": net_energy_wh_day,
-            "net_energy_kWh_year": net_kwh_year,
-            "capex_$": capex,
-            "opex_year_$": opex_year,
+            "gross_Wh_day": gross_wh_day,
+            "net_Wh_day": net_wh_day,
+            "kWh_year": kwh_year,
+            "CAPEX_$": capex,
+            "OPEX_year_$": opex_year,
             "cost_per_kWh_$": cost_per_kwh,
-            "roi_verdict": f"{roi_kind}: {roi_reason}",
-            "pedago_verdict": f"{ped_kind}: {ped_reason}",
+            "energy_ROI_verdict": f"{roi_kind}: {roi_reason}",
+            "pedagogy_verdict": f"{ped_kind}: {ped_reason}",
         }
         out_df = pd.DataFrame([export])
         buf = io.StringIO()
         out_df.to_csv(buf, index=False)
-        st.download_button(
-            "Télécharger résultats (CSV)",
-            data=buf.getvalue().encode("utf-8"),
-            file_name="kinetic_impact_results.csv",
-            mime="text/csv",
-        )
+        st.download_button(t("download_csv"), data=buf.getvalue().encode("utf-8"),
+                           file_name="kinetic_impact_results.csv", mime="text/csv", key="btn_download_csv")
 
-    # Tour step 5
-    if inp["tour_on"] and inp["tour_step"] == 5:
-        st.success("✅ Étape 5 : tu es sur Results. Tu peux maintenant affiner % zone / pas utiles / J_net/pas.")
-        st.stop()
+    if inp["tour_on"] and int(inp.get("tour_step", 1)) == 5:
+        st.success(t("tour_step_5"))
 
 
 # =========================================================
 # Methodology tab
 # =========================================================
 with tab_methods:
-    st.subheader("Methodology / Limits")
+    st.subheader(t("method_title"))
 
-    # Direct "sources" buttons for trust
     cols = st.columns(3)
     with cols[0]:
-        with try_popover("🔎 Voir la source — J_net/pas"):
-            st.write(SOURCES["J_net/pas"]["title"])
-            for label, url in SOURCES["J_net/pas"]["links"]:
+        with try_popover(t("sources_jnet")):
+            for label, url in SOURCES["J_net/step"]:
                 st.link_button(label, url)
-            st.caption(SOURCES["J_net/pas"]["note"])
-
     with cols[1]:
-        with try_popover("🔎 Voir la source — Vitesse/cadence"):
-            st.write(SOURCES["Vitesse / cadence"]["title"])
-            for label, url in SOURCES["Vitesse / cadence"]["links"]:
+        with try_popover(t("sources_motion")):
+            for label, url in SOURCES["speed/step rate"]:
                 st.link_button(label, url)
-            st.caption(SOURCES["Vitesse / cadence"]["note"])
-
     with cols[2]:
-        with try_popover("🔎 Voir la source — Unités"):
-            st.write(SOURCES["Unités (J, Wh, kWh)"]["title"])
-            for label, url in SOURCES["Unités (J, Wh, kWh)"]["links"]:
+        with try_popover(t("sources_units")):
+            for label, url in SOURCES["units"]:
                 st.link_button(label, url)
-            st.caption(SOURCES["Unités (J, Wh, kWh)"]["note"])
 
-    st.markdown("### Core formula (transparent)")
-    with st.expander("Math (expand)"):
+    st.markdown(f"### {t('core_formula')}")
+    with st.expander(t("math_expand")):
         st.code(
-            "Net Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_net_per_step ÷ 3600  −  auto_consumption_Wh_day",
+            "Net Energy (Wh/day) = visitors/day × peak_multiplier × (%on_zone/100) × useful_steps × J_net_per_step ÷ 3600  −  self_consumption_Wh_day",
             language="text",
         )
-        st.caption("1 Wh = 3600 J → division par 3600 pour convertir J → Wh.")
+        st.caption("1 Wh = 3600 J → divide by 3600 to convert J → Wh.")
 
-    st.markdown("### What this is NOT")
+    st.markdown(f"### {t('what_not')}")
     st.markdown(
-        """
-- ❌ Not powering a building (outputs are usually modest).
-- ❌ Not a climate solution alone (main value is educational + micro-local loads).
-- ❌ Not a quote: CAPEX/OPEX are project-dependent.
-"""
+        "- ❌ Not powering a building (outputs are usually modest)\n"
+        "- ❌ Not a climate solution alone (main value is educational + micro-local loads)\n"
+        "- ❌ Not a quote: CAPEX/OPEX vary by project\n"
     )
 
-    st.markdown("### Limits (anti-greenwashing)")
+    st.markdown(f"### {t('limits')}")
     st.markdown(
-        """
-- Les sorties dépendent surtout de **% sur zone** et **pas utiles** (placement + parcours).
-- **J_net/pas** varie énormément selon techno, charge, fréquence, et conditions de test.
-- À faible énergie, l’**auto-consommation** peut annuler le gain → d’où le champ explicite.
-- Aucun tracking perso: on utilise des volumes agrégés.
-"""
+        "- Outputs depend mostly on **% on zone** and **useful steps** (placement + path)\n"
+        "- **J_net/step** varies by technology, load, frequency, and test conditions\n"
+        "- At low energy, **self-consumption** can wipe out gains → explicit in the model\n"
+        "- No personal data: only aggregate visitor counts\n"
     )
 
-    st.markdown("### Note sur les coûts")
-    st.info("Les coûts (CAPEX/OPEX) ne sont pas des constantes scientifiques : ils dépendent des devis/projets.")
+    st.markdown(f"### {t('cost_note')}")
+    st.info(t("cost_note_text"))
 
 
 # =========================================================
-# Beginner-mode hiding (soft)
+# Global footer (visible everywhere)
 # =========================================================
-# (No extra needed: we already hid forecast/export in beginner.)
+st.markdown("---")
+st.caption(t("footer"))
